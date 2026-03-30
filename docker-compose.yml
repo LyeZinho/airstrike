@@ -12,6 +12,8 @@ services:
       - PORT=6959
       - VITE_API_URL=http://localhost:6959
       - VITE_GAME_SPEED=1.0
+    networks:
+      - coolify
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6959"]
@@ -21,5 +23,5 @@ services:
       start_period: 40s
 
 networks:
-  default:
-    name: stratosfear-network
+  coolify:
+    external: true
