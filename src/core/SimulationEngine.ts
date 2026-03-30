@@ -6,12 +6,17 @@ import { spatialIndex } from "../systems/SpatialIndex";
 import { detectionSystem } from "../systems/DetectionSystem";
 import { physicsSystem } from "../systems/PhysicsSystem";
 import { useSimulationState } from "../store/useSimulationState";
+import { useWarRoomStore } from "../store/useWarRoomStore";
 import { Aircraft, Missile, GameState } from "../types/entities";
 import {
   AircraftLaunchedEvent,
   MissileFireEvent,
   CollisionEvent,
 } from "../types/events";
+import { factionRegistry } from "../plugins/FactionRegistry";
+import { passiveObjectiveSystem } from "../systems/PassiveObjectiveSystem";
+import { diplomacySystem } from "../systems/DiplomacySystem";
+import { FactionState } from "../types/geopolitics";
 
 /**
  * Central simulation orchestrator.
@@ -77,6 +82,28 @@ export class SimulationEngine {
       type: "SimulationInitialized",
       timestamp: Date.now(),
     });
+
+    this.initializeWarRoom();
+  }
+
+  private initializeWarRoom(): void {
+    const factionSpecs = factionRegistry.getAll();
+    const factionStates: FactionState[] = factionSpecs.map((spec) => ({
+      id: spec.id,
+      specId: spec.id,
+      credits: spec.startingCredits,
+      fuel: 10000,
+      morale: 80,
+      posture: 'DEFENSIVE',
+      activeAircraft: [],
+      activeObjectives: [],
+      aiDecisionQueue: [],
+      lastTickTime: Date.now(),
+    }));
+
+    useWarRoomStore.getState().initializeFactions(factionStates);
+    diplomacySystem.initializeRelationships(factionSpecs.map((f) => f.id));
+    useWarRoomStore.getState().setRelationships(diplomacySystem.getAllRelationships());
   }
 
   /**
@@ -138,6 +165,23 @@ export class SimulationEngine {
 
     // Phase 5: Update store
     this.updateStore();
+    this.updateWarRoomStore();
+  }
+
+  private updateWarRoomStore(): void {
+    const warRoomStore = useWarRoomStore.getState();
+    const factions = warRoomStore.factions;
+
+    factions.forEach((factionState) => {
+      const objectives = warRoomStore.getActiveFactionObjectives(factionState.id);
+      const revenue = passiveObjectiveSystem.calculateFactionRevenue(objectives, 1.2);
+      warRoomStore.updateFactionState(factionState.id, {
+        credits: factionState.credits + revenue,
+      });
+    });
+
+    const currentTick = simulationClock.getCurrentTick();
+    warRoomStore.setGameTime(currentTick * 100);
   }
 
   /**
