@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: stratosfear-game
     ports:
-      - "${PORT:-6959}:3000"
+      - "${PORT:-6959}:6959"
       - "6969:6969"
     environment:
       - NODE_ENV=production
@@ -19,7 +19,7 @@ services:
       - ./dist:/app/dist:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "curl", "-f", "http://localhost:6959"]
       interval: 30s
       timeout: 10s
       retries: 3
