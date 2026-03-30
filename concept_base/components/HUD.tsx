@@ -31,13 +31,21 @@ import {
   Antenna,
   Radio,
   Hammer,
-  Construction
+  Construction,
+  TrendingUp,
+  TrendingDown,
+  Scale
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { getDistanceKm, calculateFuelNeeded } from "../utils/physics";
 import { analyzeThreatsAlgorithmic, TacticalAssessment } from "../utils/tacticalAnalysis";
 import { NewsModal } from "./NewsModal";
+import { IncidentReportModal } from "./IncidentReportModal";
+import { WarLedger } from "./WarLedger";
+import { DetailedMarketView } from "./DetailedMarketView";
+import { LegalDesk } from "./LegalDesk";
+import { WelcomeTerminal } from "./WelcomeTerminal";
 
 const MissionControlModal = ({
   isOpen,
@@ -581,6 +589,9 @@ export const HUD = () => {
     expandBaseInner,
     expandBaseOuter,
     reloadCargo,
+    crashHistory,
+    stockMarket,
+    lawsuits,
   } = useGameStore();
 
   const [leftDrawerOpen, setLeftDrawerOpen] = useState(true);
@@ -590,6 +601,10 @@ export const HUD = () => {
   const [tacticalAssessment, setTacticalAssessment] = useState<TacticalAssessment | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isNewsOpen, setIsNewsOpen] = useState(false);
+  const [isIncidentOpen, setIsIncidentOpen] = useState(false);
+  const [showWarLedger, setShowWarLedger] = useState(false);
+  const [showLegalDesk, setShowLegalDesk] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
   const [isBuildMenuOpen, setIsBuildMenuOpen] = useState(false);
   const [scrambleBaseId, setScrambleBaseId] = useState<string | null>(friendlyBase.id);
   const [landingBaseId, setLandingBaseId] = useState<string | null>(friendlyBase.id);
@@ -736,6 +751,63 @@ export const HUD = () => {
         aircrafts={aircrafts}
         allyAircrafts={aircrafts}
       />
+
+      <IncidentReportModal
+        isOpen={isIncidentOpen}
+        onClose={() => setIsIncidentOpen(false)}
+        incidents={crashHistory}
+      />
+
+      {showWarLedger && (
+        <div className="fixed inset-0 z-[5500] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: -20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: -20 }}
+            className="bg-slate-900/95 border border-cyan-500/40 rounded-lg p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl shadow-black/50"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-cyan-400 flex items-center gap-2">
+                <TrendingUp size={20} />
+                FACTION MARKETS
+              </h2>
+              <button
+                onClick={() => setShowWarLedger(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <DetailedMarketView stockMarket={stockMarket} />
+          </motion.div>
+        </div>
+      )}
+
+      {showLegalDesk && (
+        <div className="fixed inset-0 z-[5500] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: -20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: -20 }}
+            className="bg-slate-900/95 border border-green-500/40 rounded-lg p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl shadow-black/50"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-black text-green-400 flex items-center gap-2">
+                ⚖️ TRIBUNAL DE ESTRATOSFERA
+              </h2>
+              <button
+                onClick={() => setShowLegalDesk(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <LegalDesk />
+          </motion.div>
+        </div>
+      )}
+
+      <WelcomeTerminal isOpen={showWelcome} onClose={() => setShowWelcome(false)} />
 
       {isBuildMenuOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[6000] pointer-events-auto" onClick={() => setIsBuildMenuOpen(false)}>
@@ -1029,6 +1101,40 @@ export const HUD = () => {
             >
               <Newspaper size={18} />
               <span className="hidden md:inline text-[10px] font-black">NEWS</span>
+            </button>
+            <button
+              onClick={() => setShowWarLedger(true)}
+              className="p-2 bg-cyan-500/20 border border-cyan-500/40 rounded hover:bg-cyan-500/40 transition-all text-cyan-400 flex items-center gap-2"
+              title="Faction Markets"
+            >
+              <TrendingUp size={18} />
+              <span className="hidden md:inline text-[10px] font-black">MARKETS</span>
+            </button>
+            <button
+              onClick={() => setShowLegalDesk(true)}
+              className={cn(
+                "p-2 border rounded hover:bg-green-500/40 flex items-center gap-2 transition-all",
+                lawsuits.filter(l => l.status === 'PENDING' || l.status === 'CONTESTED').length > 0
+                  ? "bg-green-500/20 border-green-500/40 text-green-400"
+                  : "bg-slate-500/20 border-slate-500/40 text-slate-400"
+              )}
+              title="Legal Tribunal"
+            >
+              <Scale size={18} />
+              <span className="hidden md:inline text-[10px] font-black">{lawsuits.filter(l => l.status === 'PENDING' || l.status === 'CONTESTED').length}</span>
+            </button>
+            <button
+              onClick={() => setIsIncidentOpen(true)}
+              className={cn(
+                "p-2 border rounded hover:bg-red-500/40 flex items-center gap-2 transition-all",
+                crashHistory.length > 0
+                  ? "bg-red-500/20 border-red-500/40 text-red-400"
+                  : "bg-slate-500/20 border-slate-500/40 text-slate-400"
+              )}
+              title="Incident Report"
+            >
+              <AlertTriangle size={18} />
+              <span className="hidden md:inline text-[10px] font-black">{crashHistory.length}</span>
             </button>
             <button
               onClick={() => setIsBuildMenuOpen(true)}

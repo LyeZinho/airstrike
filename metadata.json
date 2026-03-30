@@ -1,5 +1,5 @@
 {
-  "name": "Air Strike: Tactical Defense",
-  "description": "Simulador tático de defesa aérea baseado em geolocalização real. Defenda sua base usando radares e interceptadores reais.",
+  "name": "STRATOSFEAR: Strategic Air Combat RTS",
+  "description": "Simulador estratégico de combate aéreo com sistema legal, mercado de ações e diplomacia dinâmica. Comande operações aerotáticas com radares e interceptadores reais.",
   "requestFramePermissions": ["geolocation"]
 }

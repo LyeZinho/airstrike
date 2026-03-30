@@ -1,4 +1,4 @@
-# Air Strike Refactoring - Executive Summary
+# STRATOSFEAR Refactoring - Executive Summary
 
 ## 🎯 Objectives
 

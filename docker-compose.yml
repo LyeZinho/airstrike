@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  stratosfear:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stratosfear-game
+    ports:
+      - "3000:3000"
+      - "6969:6969"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=http://localhost:3000
+      - VITE_GAME_SPEED=1.0
+    volumes:
+      - ./concept_base:/app/concept_base:ro
+      - ./dist:/app/dist:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: stratosfear-network

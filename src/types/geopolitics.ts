@@ -99,6 +99,91 @@ export interface NewsArticle {
 export type TechLevel = 'LEGACY' | 'MODERN' | 'ADVANCED';
 
 /**
+ * Terrain type classification from OSM data
+ */
+export type TerrainType =
+  | 'URBAN_METROPOLIS'
+  | 'URBAN_SUBURBAN'
+  | 'RURAL_AGRICULTURAL'
+  | 'FOREST_RESERVE'
+  | 'DESERT_BADLANDS'
+  | 'OCEAN_INTERNATIONAL'
+  | 'MOUNTAIN_RANGE'
+  | 'MILITARY_BASE_ENEMY'
+  | 'MILITARY_BASE_FRIENDLY'
+  | 'UNKNOWN';
+
+/**
+ * Terrain damage metadata
+ */
+export interface TerrainDamageProfile {
+  multiplier: number; // crash damage multiplier
+  pilotSurvival: number; // 0-1 survival probability
+  costDescription: string; // 'Max', 'High', 'Medium', 'Low', 'Zero', 'Combat', 'Protocol'
+}
+
+/**
+ * Crash incident report - financial breakdown of aircraft loss
+ */
+export interface IncidentReport {
+  id: string;
+  timestamp: number;
+  aircraftId: string;
+  aircraftModel: string;
+  factionId: string;
+  location: { lat: number; lng: number };
+  terrainType: TerrainType;
+  baseDamage: number; // aircraft acquisition cost
+  terrainMultiplier: number;
+  totalDamage: number; // baseDamage * terrainMultiplier
+  pilotStatus: 'EJECTED' | 'CAPTURED' | 'KIA' | 'UNKNOWN';
+  causeOfLoss: 'ENEMY_FIRE' | 'SAM' | 'AAA' | 'COLLISION' | 'MECHANICAL' | 'FUEL';
+  factionResponsible?: string; // if known
+  newsHeadline: string;
+  financialImpact: {
+    aircraftLoss: number;
+    pilotRescueCost?: number;
+    diplomaticCost?: number;
+    stockPriceImpact: number; // percentage
+  };
+}
+
+/**
+ * Faction AI personality profile - weights for behavior decisions
+ */
+export interface FactionAIPersonality {
+  factionId: string;
+  attackAggressiveness: number; // 0-100
+  evasionCaution: number; // 0-100
+  terrainPreference: TerrainType[]; // preferred terrain types for evasion
+  communicationStyle: 'FORMAL' | 'CHATTER' | 'SILENT' | 'ANONYMOUS';
+  riskTolerance: number; // 0-100
+  preferredEjectionZones: TerrainType[]; // terrain to eject toward
+}
+
+/**
+ * Stock market tick - price history for one faction
+ */
+export interface StockMarketTick {
+  factionId: string;
+  timestamp: number;
+  price: number;
+  priceChange: number; // delta from previous
+  volume: number; // shares traded
+  volatility: number; // 0-1 (market volatility)
+}
+
+/**
+ * Real-time stock market state
+ */
+export interface StockMarket {
+  activeFactions: string[]; // faction IDs in market
+  currentPrices: Record<string, number>; // factionId -> current price
+  priceHistory: Record<string, StockMarketTick[]>; // factionId -> history
+  lastUpdateTick: number; // simulation tick of last update
+}
+
+/**
  * Posture state machine
  */
 export type FactionPosture = 'DEFENSIVE' | 'AGGRESSIVE' | 'WARTIME' | 'DIPLOMATIC' | 'COLLAPSED';

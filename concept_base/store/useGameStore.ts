@@ -20,9 +20,18 @@ import {
   Building,
   BuildingType,
   PendingBuilding,
-  ResourceSpot
+  ResourceSpot,
+  TerrainType,
+  IncidentReport,
+  StockMarket,
+  StockMarketTick,
+  FactionAIPersonality,
+  Lawsuit,
+  CasusBelli,
+  LawsuitEvidence
 } from "../types/game";
 import { AIRCRAFT_SPECS, MISSILE_SPECS, GROUND_UNIT_SPECS } from "../constants/specs";
+import { FACTION_SPECS_PHASE16, FACTION_AI_PERSONALITIES, TERRAIN_DAMAGE_MULTIPLIERS } from "../data/factionData";
 import { 
   getNextPosition, 
   getDistanceKm, 
@@ -32,8 +41,10 @@ import {
   calculateDetectionProbability,
   calculateFuelNeeded
 } from "../utils/physics";
+import { fetchTerrainFromOverpass } from "../utils/terrainDetection";
 import { QTable, createAIState, Rewards, AIAction } from "../utils/qLearning";
 import { NewsEvent, getNewsHeadlines } from "../utils/newsSystem";
+import { resolveContestation } from "../utils/legalSystem";
 
 const BUILDING_COSTS: Record<BuildingType, { cost: number; maintenance: number; effect: string }> = {
   [BuildingType.HANGAR]: { cost: 15000, maintenance: 200, effect: "+2 max aircraft" },
@@ -62,6 +73,15 @@ interface GameState {
   pendingBuildings: PendingBuilding[];
   newsEvents: NewsEvent[];
   
+  // Phase 16: Geopolitical systems
+  crashHistory: IncidentReport[];
+  stockMarket: StockMarket;
+  factionPersonalities: Record<string, FactionAIPersonality>;
+  terrainCache: Record<string, TerrainType>;
+  lawsuits: Lawsuit[];
+  casusBelli: CasusBelli[];
+  legalInfluence: number;
+  
   // Actions
   setFriendlyBase: (base: Base) => void;
   expandBaseInner: (upgradeType: 'HANGAR' | 'RADAR' | 'FUEL' | 'DEFENSE') => void;
@@ -75,6 +95,17 @@ interface GameState {
   toggleECM: (aircraftId: string) => void;
   addLog: (message: string) => void;
   togglePause: () => void;
+  
+  // Phase 16 Actions
+  recordCrash: (report: IncidentReport) => void;
+  updateStockPrice: (factionId: string, change: number) => void;
+  setTerrainType: (position: Coordinates, terrain: TerrainType) => void;
+  createLawsuit: (incidentReportId: string, claimantFactionId: string) => void;
+  payoutLawsuit: (lawsuitId: string) => void;
+  contestLawsuit: (lawsuitId: string) => void;
+  ignoreLawsuit: (lawsuitId: string) => void;
+  resolveLawsuit: (lawsuitId: string, outcome: 'WON' | 'LOST') => void;
+  increaseLegalInfluence: (amount: number) => void;
   
   // Groups
   createGroup: (leaderId: string, memberIds: string[], type: FormationType, name: string) => void;
@@ -323,6 +354,18 @@ export const useGameStore = create<GameState>((set, get) => ({
     { id: 'init-2', timestamp: Date.now() - 1800000, type: 'military', title: 'Enemy Buildup Detected', description: 'Satellite imagery shows increased activity at forward bases.', severity: 'high' as const },
     { id: 'init-3', timestamp: Date.now() - 600000, type: 'threat', title: 'Immediate Threat', description: 'Hostile aircraft have crossed into contested airspace.', severity: 'critical' as const },
   ],
+  
+  crashHistory: [],
+  stockMarket: {
+    factionPrices: Object.fromEntries(Object.entries(FACTION_SPECS_PHASE16).map(([id, spec]) => [id, 100])),
+    history: [],
+    volatilityIndex: Object.fromEntries(Object.entries(FACTION_SPECS_PHASE16).map(([id]) => [id, 0.05])),
+  },
+  factionPersonalities: FACTION_AI_PERSONALITIES as any,
+  terrainCache: {},
+  lawsuits: [],
+  casusBelli: [],
+  legalInfluence: 10,
 
   setFriendlyBase: (base) => set({ friendlyBase: base }),
   
@@ -454,6 +497,263 @@ export const useGameStore = create<GameState>((set, get) => ({
     logs: [`[${new Date().toLocaleTimeString()}] ${message}`, ...state.logs].slice(0, 50) 
   })),
   togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
+  
+  recordCrash: (report) => set((state) => {
+    const updated = [...state.crashHistory, report].slice(-100);
+    const factionSpec = FACTION_SPECS_PHASE16[report.factionId || 'AD'];
+    if (factionSpec) {
+      const volatility = state.stockMarket.volatilityIndex[report.factionId || 'AD'] || 0.05;
+      const priceChange = factionSpec.stockVolatility.lossImpact * (1 + volatility);
+      const currentPrice = state.stockMarket.factionPrices[report.factionId || 'AD'] || 100;
+      state.updateStockPrice(report.factionId || 'AD', priceChange);
+    }
+    return { crashHistory: updated };
+  }),
+  
+  updateStockPrice: (factionId, changePercent) => set((state) => {
+    const currentPrice = state.stockMarket.factionPrices[factionId] || 100;
+    const newPrice = Math.max(10, currentPrice * (1 + changePercent));
+    const tick: StockMarketTick = {
+      timestamp: Date.now(),
+      factionId,
+      price: newPrice,
+      volume: Math.random() * 1000000,
+      change: changePercent,
+    };
+    return {
+      stockMarket: {
+        ...state.stockMarket,
+        factionPrices: { ...state.stockMarket.factionPrices, [factionId]: newPrice },
+        history: [...state.stockMarket.history, tick].slice(-100),
+        volatilityIndex: { ...state.stockMarket.volatilityIndex, [factionId]: Math.abs(changePercent) * 2 },
+      }
+    };
+  }),
+  
+  setTerrainType: (position, terrain) => set((state) => {
+    const key = `${Math.round(position.lat * 100)},${Math.round(position.lng * 100)}`;
+    return {
+      terrainCache: { ...state.terrainCache, [key]: terrain }
+    };
+  }),
+
+  createLawsuit: (incidentReportId, claimantFactionId) => set((state) => {
+    const report = state.crashHistory.find(r => r.id === incidentReportId);
+    if (!report) return state;
+
+    const gameHourInMs = 60000;
+    const lawsuitId = `lawsuit-${Math.random().toString(36).substr(2, 9)}`;
+    const now = Date.now();
+    
+    const lawsuit: Lawsuit = {
+      id: lawsuitId,
+      incidentReportId,
+      claimantFactionId,
+      defendantFactionId: 'AD',
+      createdAt: now,
+      deadlineAt: now + 48 * gameHourInMs,
+      claimAmount: report.totalDamage,
+      status: 'PENDING',
+      evidence: {
+        vectorOfAttack: report.causeOfLoss === 'ENEMY_FIRE',
+        terrainMismatch: report.terrainType === 'OCEAN_INTERNATIONAL',
+        witnessReports: Math.random() * 100,
+        satelliteImagery: Math.random() > 0.6,
+      },
+      contestionCost: 10000,
+      juryBias: Math.random() * 0.8,
+    };
+
+    const updatedReport = { ...report, lawsuitId };
+    const updatedCrashHistory = state.crashHistory.map(r => r.id === incidentReportId ? updatedReport : r);
+
+    return {
+      lawsuits: [...state.lawsuits, lawsuit],
+      crashHistory: updatedCrashHistory,
+    };
+  }),
+
+  payoutLawsuit: (lawsuitId) => set((state) => {
+    const lawsuit = state.lawsuits.find(l => l.id === lawsuitId);
+    if (!lawsuit || lawsuit.status !== 'PENDING') return state;
+
+    const updatedLawsuits = state.lawsuits.map(l =>
+      l.id === lawsuitId ? { ...l, status: 'PAID' as const, lastAction: 'COMPLY' as const, lastActionAt: Date.now() } : l
+    );
+
+    const updatedBase = { ...state.friendlyBase, credits: Math.max(0, state.friendlyBase.credits - lawsuit.claimAmount) };
+
+    const newsEvent: NewsEvent = {
+      id: `news-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      type: 'diplomatic',
+      title: 'General cumpre acordo judicial; Ética reafirmada',
+      description: `Indenização de ${lawsuit.claimAmount}Cr paga a ${FACTION_SPECS_PHASE16[lawsuit.claimantFactionId]?.name || lawsuit.claimantFactionId}. Inversores aplaudem responsabilidade.`,
+      severity: 'low',
+      factionId: lawsuit.claimantFactionId
+    };
+
+    return { 
+      lawsuits: updatedLawsuits,
+      friendlyBase: updatedBase,
+      newsEvents: [newsEvent, ...state.newsEvents].slice(0, 20),
+    };
+  }),
+
+  contestLawsuit: (lawsuitId) => set((state) => {
+    const lawsuit = state.lawsuits.find(l => l.id === lawsuitId);
+    if (!lawsuit || lawsuit.status !== 'PENDING') return state;
+
+    const updated = state.lawsuits.map(l =>
+      l.id === lawsuitId ? { ...l, status: 'CONTESTED' as const, lastAction: 'CONTEST' as const, lastActionAt: Date.now() } : l
+    );
+
+    const newsEvent: NewsEvent = {
+      id: `news-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      type: 'diplomatic',
+      title: 'Tribunal recebe contestação legal',
+      description: `Defesa judicial apresentada contra acusações de ${FACTION_SPECS_PHASE16[lawsuit.claimantFactionId]?.name || lawsuit.claimantFactionId}. Veredicto esperado em breve.`,
+      severity: 'medium',
+      factionId: lawsuit.claimantFactionId
+    };
+
+    setTimeout(() => {
+      const result = resolveContestation(lawsuit, useGameStore.getState().legalInfluence);
+      if (result.won) {
+        useGameStore.setState(s => ({
+          lawsuits: s.lawsuits.map(l => l.id === lawsuitId ? { ...l, status: 'WON' as const } : l)
+        }));
+      } else {
+        useGameStore.setState(s => ({
+          lawsuits: s.lawsuits.map(l => l.id === lawsuitId ? { ...l, status: 'LOST' as const } : l)
+        }));
+      }
+    }, 10000);
+
+    return { 
+      lawsuits: updated,
+      newsEvents: [newsEvent, ...state.newsEvents].slice(0, 20),
+    };
+  }),
+
+  ignoreLawsuit: (lawsuitId) => set((state) => {
+    const lawsuit = state.lawsuits.find(l => l.id === lawsuitId);
+    if (!lawsuit || lawsuit.status !== 'PENDING') return state;
+
+    const updated = state.lawsuits.map(l =>
+      l.id === lawsuitId ? { ...l, status: 'IGNORED' as const, lastAction: 'IGNORE' as const, lastActionAt: Date.now() } : l
+    );
+
+    const newCasusBelli: CasusBelli = {
+      factionId: lawsuit.claimantFactionId,
+      reason: 'LAWSUIT_IGNORED',
+      declaredAt: Date.now(),
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      hostilityLevel: 75,
+    };
+
+    const newsEvent: NewsEvent = {
+      id: `news-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      type: 'threat',
+      title: 'CASUS BELLI DECLARADO',
+      description: `${FACTION_SPECS_PHASE16[lawsuit.claimantFactionId]?.name || lawsuit.claimantFactionId} declarou intenção hostil após ignorarmos acusações legais. Guerra iminente.`,
+      severity: 'critical',
+      factionId: lawsuit.claimantFactionId
+    };
+
+    return {
+      lawsuits: updated,
+      casusBelli: [...state.casusBelli, newCasusBelli],
+      newsEvents: [newsEvent, ...state.newsEvents].slice(0, 20),
+    };
+  }),
+
+  resolveLawsuit: (lawsuitId, outcome) => set((state) => {
+    const lawsuit = state.lawsuits.find(l => l.id === lawsuitId);
+    if (!lawsuit) return state;
+
+    const updated = state.lawsuits.map(l => {
+      if (l.id === lawsuitId) {
+        return { ...l, status: outcome, lastActionAt: Date.now() };
+      }
+      return l;
+    });
+
+    const stockImpact = outcome === 'WON' ? -0.1 : 0.15;
+    const currentPrice = state.stockMarket.factionPrices[lawsuit.claimantFactionId] || 100;
+    const newPrice = Math.max(10, currentPrice * (1 + stockImpact));
+
+    const tick: StockMarketTick = {
+      timestamp: Date.now(),
+      factionId: lawsuit.claimantFactionId,
+      price: newPrice,
+      volume: Math.random() * 500000,
+      change: stockImpact,
+      trigger: outcome === 'WON' ? `Ação judicial perdida` : `Ação judicial vencida`,
+    };
+
+    const newsHeadlines = [
+      { 
+        won: "Tribunal exonera General de acusações; Indenização rejeitada",
+        lost: "Tribunal condena ações irresponsáveis; Indenização massiva imposta"
+      },
+      {
+        won: "Defesa legal bem-sucedida; Credibilidade reafirmada",
+        lost: "Negligência confirmada pelo tribunal; Reputação abalada"
+      },
+      {
+        won: "Evidências insuficientes para condenação",
+        lost: "Culpa comprovada em ação judicial histórica"
+      }
+    ];
+
+    const randomHeadline = newsHeadlines[Math.floor(Math.random() * newsHeadlines.length)];
+    const headline = outcome === 'WON' ? randomHeadline.won : randomHeadline.lost;
+
+    const newsEvent: NewsEvent = {
+      id: `news-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      type: 'diplomatic',
+      title: headline,
+      description: outcome === 'WON' 
+        ? `Processo contra ${FACTION_SPECS_PHASE16[lawsuit.claimantFactionId]?.name || lawsuit.claimantFactionId} foi vencido. Mercados reagem positivamente.`
+        : `Tribunal pronunciou-se contra nossas ações. Danos significativos à reputação e ao patrimônio.`,
+      severity: outcome === 'WON' ? 'low' : 'high',
+      factionId: lawsuit.claimantFactionId
+    };
+
+    return {
+      lawsuits: updated,
+      newsEvents: [newsEvent, ...state.newsEvents].slice(0, 20),
+      stockMarket: {
+        ...state.stockMarket,
+        factionPrices: { ...state.stockMarket.factionPrices, [lawsuit.claimantFactionId]: newPrice },
+        history: [...state.stockMarket.history, tick].slice(-100),
+        volatilityIndex: { ...state.stockMarket.volatilityIndex, [lawsuit.claimantFactionId]: Math.abs(stockImpact) * 2.5 },
+      }
+    };
+  }),
+
+  increaseLegalInfluence: (amount) => set((state) => {
+    const creditCostPerPoint = 2000;
+    const maxInfluence = 20;
+    const totalCost = amount * creditCostPerPoint;
+    
+    if (state.friendlyBase.credits < totalCost) {
+      return state;
+    }
+
+    const newInfluence = Math.min(maxInfluence, state.legalInfluence + amount);
+    const pointsAdded = newInfluence - state.legalInfluence;
+    const actualCost = pointsAdded * creditCostPerPoint;
+
+    return {
+      legalInfluence: newInfluence,
+      friendlyBase: { ...state.friendlyBase, credits: state.friendlyBase.credits - actualCost }
+    };
+  }),
 
   createGroup: (leaderId, memberIds, type, name) => set((state) => ({
     groups: [...state.groups, { id: `group-${Math.random().toString(36).substr(2, 9)}`, leaderId, memberIds, type, name }]
@@ -759,8 +1059,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     addLog(`FOX: ${ac ? ac.spec.model : (gu as any).model} lançou ${model} contra alvo.`);
   },
 
-  tick: (deltaTime) => {
-    const { isPaused, aircrafts, groundUnits, friendlyBase, hostileBases, allyBases, missiles, trailDensity, groups, addLog, launchMissile, pendingBuildings, setFriendlyBase, newsEvents } = get();
+   tick: (deltaTime) => {
+    const { isPaused, aircrafts, groundUnits, friendlyBase, hostileBases, allyBases, missiles, trailDensity, groups, addLog, launchMissile, pendingBuildings, setFriendlyBase, newsEvents, factionPersonalities } = get();
     if (isPaused) return;
     
     const updatedNews = getNewsHeadlines(aircrafts, hostileBases, friendlyBase, newsEvents);
@@ -1347,6 +1647,61 @@ export const useGameStore = create<GameState>((set, get) => ({
           }
         }
         
+        // Phase 16: Generate crash report
+        if (wasDestroyed) {
+          const baseDamage = 5000000;
+          const { terrainCache, recordCrash, setTerrainType } = get();
+          const terrainKey = `${Math.round(ac.position.lat * 100)},${Math.round(ac.position.lng * 100)}`;
+           let terrain = terrainCache[terrainKey] || 'UNKNOWN';
+           
+           if (!terrainCache[terrainKey]) {
+             fetchTerrainFromOverpass(ac.position.lat, ac.position.lng)
+               .then(detectedTerrain => {
+                 setTerrainType(ac.position, detectedTerrain);
+               })
+               .catch(() => {});
+           }
+          
+          const damageProfile = TERRAIN_DAMAGE_MULTIPLIERS[terrain] || TERRAIN_DAMAGE_MULTIPLIERS.UNKNOWN;
+          const totalDamage = baseDamage * damageProfile.multiplier;
+          
+          const killerFactionId = killer 
+            ? updatedAircrafts.find(a => a.id === killer.launcherId)?.factionId 
+            : undefined;
+          
+          const report: IncidentReport = {
+            id: `crash-${Date.now()}`,
+            timestamp: Date.now(),
+            aircraftId: ac.id,
+            aircraftModel: ac.spec.model,
+            factionId: ac.factionId,
+            location: ac.position,
+            terrainType: terrain as TerrainType,
+            baseDamage,
+            terrainMultiplier: damageProfile.multiplier,
+            totalDamage,
+            pilotStatus: Math.random() < damageProfile.pilotSurvival ? 'EJECTED' : 'KIA',
+            causeOfLoss: killer ? 'ENEMY_FIRE' : 'MECHANICAL',
+            factionResponsible: killerFactionId,
+            newsHeadline: `${ac.spec.model} shot down over ${terrain.replace(/_/g, ' ').toLowerCase()}`,
+            financialImpact: {
+              aircraftLoss: totalDamage,
+              pilotRescueCost: damageProfile.pilotSurvival > 0.5 ? 500000 : 0,
+              diplomaticCost: ac.side === Side.FRIENDLY ? 1000000 : 0,
+              stockPriceImpact: -0.05,
+            }
+          };
+          
+          recordCrash(report);
+          
+          const { createLawsuit } = get();
+          if (killerFactionId && killerFactionId !== ac.factionId) {
+            createLawsuit(report.id, killerFactionId);
+          }
+          
+          addLog(`PERDAS: ${ac.spec.model} destruído. Dano financeiro: ${totalDamage}Cr`);
+        }
+        
         return { ...ac, health: 0, status: AircraftStatus.DESTROYED };
       }
       return { ...ac, health, isDamaged: health < 50 };
@@ -1368,7 +1723,13 @@ export const useGameStore = create<GameState>((set, get) => ({
           return;
         }
         
-        const enemyQTable = new QTable();
+        const factionPersonalityData = factionPersonalities[base.factionId || 'AD'] as any;
+        const personalityProfile = {
+          attackAggressiveness: factionPersonalityData?.attackAggressiveness || 50,
+          evasionCaution: factionPersonalityData?.evasionCaution || 50,
+          riskTolerance: factionPersonalityData?.riskTolerance || 50,
+        };
+        const enemyQTable = new QTable(personalityProfile);
         
         let mission: Mission | undefined;
         const rand = Math.random();

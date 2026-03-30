@@ -10,8 +10,8 @@ interface ResourcesDisplayProps {
 export const ResourcesDisplay: React.FC<ResourcesDisplayProps> = ({ faction, factionName }) => {
   if (!faction) {
     return (
-      <div className="bg-gray-900 border border-gray-700 rounded p-4 text-gray-500">
-        No faction selected
+      <div className="flex-1 w-full h-full text-slate-500/50 flex flex-col justify-center items-center h-24">
+        <span className="text-[10px] tracking-widest uppercase">No faction selected</span>
       </div>
     );
   }
@@ -39,8 +39,11 @@ export const ResourcesDisplay: React.FC<ResourcesDisplayProps> = ({ faction, fac
   };
 
   return (
-    <div className="bg-gray-900 border border-cyan-700 rounded p-4">
-      <h3 className="text-cyan-400 font-bold mb-3">{factionName || faction.id}</h3>
+    <div className="flex-1 w-full h-full">
+      <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-2 mb-3">
+        <Heart className="w-4 h-4 text-cyan-400" />
+        <h3 className="text-[10px] text-cyan-400 font-bold tracking-widest">{factionName || faction.id}</h3>
+      </div>
 
       <div className="space-y-3 text-sm">
         <div className="flex items-center justify-between">
@@ -75,11 +78,9 @@ export const ResourcesDisplay: React.FC<ResourcesDisplayProps> = ({ faction, fac
           <span className="font-mono text-cyan-400">{faction.activeAircraft.length}</span>
         </div>
 
-        <div className="pt-2 border-t border-gray-800">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-gray-400">Posture</span>
-          </div>
-          <span className={`px-3 py-1 rounded text-xs font-bold ${getPostureColor(faction.posture)}`}>
+        <div className="pt-3 mt-1 border-t border-cyan-500/20 flex justify-between items-center">
+          <span className="text-[9px] uppercase tracking-widest text-slate-400">Current Posture</span>
+          <span className={`px-2 py-0.5 rounded border text-[9px] font-bold tracking-widest uppercase ${getPostureColor(faction.posture)}`}>
             {faction.posture}
           </span>
         </div>

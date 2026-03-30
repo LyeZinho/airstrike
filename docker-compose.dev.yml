@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  stratosfear:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stratosfear-dev
+    ports:
+      - "6969:6969"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:6969
+    volumes:
+      - ./concept_base:/app/concept_base
+      - ./dist:/app/dist
+    command: npm run dev
+    restart: unless-stopped

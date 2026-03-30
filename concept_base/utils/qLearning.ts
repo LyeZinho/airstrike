@@ -12,6 +12,12 @@ export interface AIState {
   rwr: RWRState;
 }
 
+export interface FactionPersonalityProfile {
+  attackAggressiveness: number;
+  evasionCaution: number;
+  riskTolerance: number;
+}
+
 const LEARNING_RATE = 0.1;
 const DISCOUNT_FACTOR = 0.9;
 const EXPLORATION_RATE = 0.1;
@@ -27,15 +33,30 @@ const SPEED_HIGH = 0.8;
 
 const ACTIONS: AIAction[] = ['ENGAGE', 'NOTCH', 'CRANK', 'EVADE', 'RETREAT', 'TERRAIN_MASK'];
 
+const ACTION_PERSONALITY_WEIGHTS: Record<AIAction, keyof FactionPersonalityProfile> = {
+  ENGAGE: 'attackAggressiveness',
+  NOTCH: 'evasionCaution',
+  CRANK: 'attackAggressiveness',
+  EVADE: 'evasionCaution',
+  RETREAT: 'evasionCaution',
+  TERRAIN_MASK: 'evasionCaution',
+};
+
 export class QTable {
   private table: Map<string, number[]>;
   public experience: number;
   public generation: number;
+  public personality: FactionPersonalityProfile;
 
-  constructor() {
+  constructor(personality?: FactionPersonalityProfile) {
     this.table = new Map();
     this.experience = 0;
     this.generation = 1;
+    this.personality = personality || {
+      attackAggressiveness: 50,
+      evasionCaution: 50,
+      riskTolerance: 50,
+    };
   }
 
   private stateToKey(state: AIState): string {
@@ -62,7 +83,14 @@ export class QTable {
     }
 
     const entry = this.getOrCreateEntry(state);
-    const bestIndex = entry.indexOf(Math.max(...entry));
+    const adjustedScores = entry.map((q, idx) => {
+      const action = ACTIONS[idx];
+      const personalityKey = ACTION_PERSONALITY_WEIGHTS[action];
+      const personalityInfluence = (this.personality[personalityKey] - 50) / 100;
+      return q + personalityInfluence * Math.max(q, 0);
+    });
+
+    const bestIndex = adjustedScores.indexOf(Math.max(...adjustedScores));
     return ACTIONS[bestIndex];
   }
 
@@ -77,7 +105,11 @@ export class QTable {
     const nextEntry = this.getOrCreateEntry(nextState);
     const maxNextQ = Math.max(...nextEntry);
 
-    const newQ = currentQ + LEARNING_RATE * (reward + DISCOUNT_FACTOR * maxNextQ - currentQ);
+    const personalityKey = ACTION_PERSONALITY_WEIGHTS[action];
+    const riskModifier = 1 + (this.personality.riskTolerance - 50) / 200;
+    const adjustedReward = reward * riskModifier;
+
+    const newQ = currentQ + LEARNING_RATE * (adjustedReward + DISCOUNT_FACTOR * maxNextQ - currentQ);
     entry[actionIdx] = newQ;
 
     this.experience++;
@@ -89,6 +121,24 @@ export class QTable {
 
   getLevel(): number {
     return Math.min(50, Math.floor(this.experience / 10) + 1);
+  }
+
+  shouldEvade(healthPercent: number, threatsNearby: number): boolean {
+    const evasionThreshold = 70 - (this.personality.evasionCaution - 50);
+    if (healthPercent < evasionThreshold) return true;
+
+    if (threatsNearby > 0) {
+      const cautionProbability = (this.personality.evasionCaution + 50) / 200;
+      return Math.random() < cautionProbability;
+    }
+
+    return false;
+  }
+
+  getEvastionDistance(): number {
+    const base = 50;
+    const personalityMod = (this.personality.evasionCaution - 50) / 100;
+    return base + personalityMod * 30;
   }
 }
 

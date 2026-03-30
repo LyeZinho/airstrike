@@ -1,4 +1,4 @@
-# Air Strike – RTS Browser Game
+# STRATOSFEAR – RTS Browser Game
 ## Implementation Complete ✓
 
 ### Status: Ready for Gameplay Testing
@@ -133,7 +133,7 @@ All core systems implemented and verified. Dev server running at `http://localho
 ## Project Structure
 
 ```
-airstrike/
+stratosfear/
 ├── src/
 │   ├── constants/
 │   │   ├── aircraft.ts      (170 lines - 7 types)
@@ -263,7 +263,7 @@ npm run tsc             # Type checking only
 
 ## Game Design Document Reference
 
-This implementation follows the **Air Strike – Implementation Plan** from `@planning.txt`:
+This implementation follows the **STRATOSFEAR – Implementation Plan** from `@planning.txt`:
 - ✓ Project bootstrap (Vite + React + TS + Tailwind)
 - ✓ Constants/Data Layer
 - ✓ Game Store (Zustand)

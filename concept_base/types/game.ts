@@ -231,3 +231,109 @@ export interface ResourceSpot {
   creditsStorage: number;
   lastRestockTime: number;
 }
+
+// ===== PHASE 16: STRATOSFEAR EXPANSION =====
+
+export type TerrainType =
+  | 'URBAN_METROPOLIS'
+  | 'URBAN_SUBURBAN'
+  | 'RURAL_AGRICULTURAL'
+  | 'FOREST_RESERVE'
+  | 'DESERT_BADLANDS'
+  | 'OCEAN_INTERNATIONAL'
+  | 'MOUNTAIN_RANGE'
+  | 'MILITARY_BASE_ENEMY'
+  | 'MILITARY_BASE_FRIENDLY'
+  | 'UNKNOWN';
+
+export interface TerrainDamageProfile {
+  multiplier: number; // crash damage multiplier
+  pilotSurvival: number; // 0-1 survival probability
+  costDescription: string; // 'Max', 'High', 'Medium', 'Low', 'Zero', 'Combat', 'Protocol'
+}
+
+export interface IncidentReport {
+  id: string;
+  timestamp: number;
+  aircraftId: string;
+  aircraftModel: string;
+  factionId?: string;
+  location: Coordinates;
+  terrainType: TerrainType;
+  baseDamage: number; // aircraft acquisition cost
+  terrainMultiplier: number;
+  totalDamage: number; // baseDamage * terrainMultiplier
+  pilotStatus: 'EJECTED' | 'CAPTURED' | 'KIA' | 'UNKNOWN';
+  causeOfLoss: 'ENEMY_FIRE' | 'SAM' | 'AAA' | 'COLLISION' | 'MECHANICAL' | 'FUEL';
+  factionResponsible?: string;
+  newsHeadline: string;
+  financialImpact: {
+    aircraftLoss: number;
+    pilotRescueCost?: number;
+    diplomaticCost?: number;
+    stockPriceImpact: number; // percentage
+  };
+  lawsuitId?: string; // reference to auto-generated lawsuit
+}
+
+export interface StockMarketTick {
+  timestamp: number;
+  factionId: string;
+  price: number;
+  volume: number;
+  change: number; // percentage
+  trigger?: string; // event that caused the move
+}
+
+export interface StockMarket {
+  factionPrices: Record<string, number>; // factionId -> current price
+  history: StockMarketTick[]; // last 100 ticks
+  volatilityIndex: Record<string, number>; // factionId -> volatility %
+}
+
+export interface FactionAIPersonality {
+  factionId: string;
+  aggressiveness: number; // 0-100: how willing to engage
+  defensiveness: number; // 0-100: prioritize base protection
+  economyFocus: number; // 0-100: prioritize revenue over combat
+  diplomacy: number; // 0-100: prefer treaties over conflict
+  terrainMastery: number; // 0-100: use terrain for advantage
+  riskTolerance: number; // 0-100: accept losses for gains
+  evasionThreshold: number; // health % before RTB
+}
+
+// ===== TRIBUNAL DE ESTRATOSFERA: LEGAL SYSTEM =====
+
+export type LawsuitStatus = 'PENDING' | 'CONTESTED' | 'PAID' | 'WON' | 'LOST' | 'IGNORED';
+export type LawsuitAction = 'COMPLY' | 'CONTEST' | 'IGNORE';
+
+export interface LawsuitEvidence {
+  vectorOfAttack: boolean; // enemy was on attack vector
+  terrainMismatch: boolean; // claimed terrain ≠ actual terrain
+  witnessReports: number; // 0-100: reliability score
+  satelliteImagery: boolean; // have satellite proof
+}
+
+export interface Lawsuit {
+  id: string;
+  incidentReportId: string;
+  claimantFactionId: string; // who sued us
+  defendantFactionId: string; // us (player)
+  createdAt: number;
+  deadlineAt: number; // createdAt + 48 game hours
+  claimAmount: number; // total damage claimed
+  status: LawsuitStatus;
+  evidence: LawsuitEvidence;
+  lastAction?: LawsuitAction;
+  lastActionAt?: number;
+  contestionCost?: number; // legal fees if contested
+  juryBias: number; // 0-1: how biased jury is toward claimant (0=fair, 1=completely against us)
+}
+
+export interface CasusBelli {
+  factionId: string; // who declared it
+  reason: 'LAWSUIT_IGNORED' | 'LAWSUIT_LOST_WITH_BAD_FAITH' | 'REPEATED_VIOLATIONS';
+  declaredAt: number;
+  expiresAt: number; // 1 week of game time
+  hostilityLevel: number; // 0-100: how aggressive they can be
+}

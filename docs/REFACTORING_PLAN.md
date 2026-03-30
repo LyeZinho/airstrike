@@ -1,4 +1,4 @@
-# Air Strike – Architecture Refactoring Plan
+# STRATOSFEAR – Architecture Refactoring Plan
 
 > **For Claude:** Use superpowers:executing-plans to implement this plan task-by-task in a fresh session.
 

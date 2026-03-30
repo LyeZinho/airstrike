@@ -33,13 +33,8 @@ export const GlobalMonitor: React.FC<GlobalMonitorProps> = ({ articles, onArticl
   };
 
   return (
-    <div className="bg-gray-900 border border-cyan-700 rounded p-4">
-      <h3 className="text-cyan-400 font-bold mb-4 flex items-center gap-2">
-        <Radio className="w-5 h-5" />
-        GLOBAL NEWS MONITOR
-      </h3>
-
-      <div className="space-y-3 max-h-96 overflow-y-auto">
+    <div className="flex-1 w-full h-full">
+      <div className="space-y-3 h-full">
         {articles.slice(0, 10).map((article) => (
           <div
             key={article.id}
@@ -52,10 +47,10 @@ export const GlobalMonitor: React.FC<GlobalMonitorProps> = ({ articles, onArticl
                 {new Date(article.timestamp).toLocaleTimeString()}
               </span>
             </div>
-            <p className={`text-sm font-semibold ${getBiasColor(article.bias)}`}>
+            <p className={`text-[10px] sm:text-xs font-semibold uppercase tracking-wider ${getBiasColor(article.bias)}`}>
               {article.headline}
             </p>
-            <div className="flex justify-between items-center mt-2">
+            <div className="flex justify-between items-center mt-2 border-t border-slate-700/50 pt-2">
               <span className="text-xs text-gray-600">{article.category}</span>
               <span className="text-xs px-2 py-1 bg-gray-800 rounded">
                 Importance: {article.importance}/10

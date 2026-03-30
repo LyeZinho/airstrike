@@ -33,22 +33,17 @@ export const DiplomacyMatrix: React.FC<DiplomacyMatrixProps> = ({ relationships,
   );
 
   return (
-    <div className="bg-gray-900 border border-cyan-700 rounded p-4">
-      <h3 className="text-cyan-400 font-bold mb-4 flex items-center gap-2">
-        <Handshake className="w-5 h-5" />
-        DIPLOMACY MATRIX
-      </h3>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
+    <div className="flex-1 w-full h-full">
+      <div className="overflow-x-auto h-full">
+        <table className="w-full text-[10px] tracking-wider font-mono">
           <thead>
-            <tr className="border-b border-gray-700">
-              <th className="text-left p-2 text-gray-400">From</th>
-              <th className="text-left p-2 text-gray-400">To</th>
-              <th className="text-center p-2 text-gray-400">Trust</th>
-              <th className="text-center p-2 text-gray-400">Fear</th>
-              <th className="text-center p-2 text-gray-400">Align</th>
-              <th className="text-left p-2 text-gray-400">Status</th>
+            <tr className="border-b border-cyan-500/30">
+              <th className="text-left p-2 text-cyan-600/70 uppercase">From</th>
+              <th className="text-left p-2 text-cyan-600/70 uppercase">To</th>
+              <th className="text-center p-2 text-cyan-600/70 uppercase">Trust</th>
+              <th className="text-center p-2 text-cyan-600/70 uppercase">Fear</th>
+              <th className="text-center p-2 text-cyan-600/70 uppercase">Align</th>
+              <th className="text-left p-2 text-cyan-600/70 uppercase">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -58,14 +53,14 @@ export const DiplomacyMatrix: React.FC<DiplomacyMatrixProps> = ({ relationships,
               const status = getRelationshipStatus(rel);
 
               return (
-                <tr key={`${rel.factionAId}-${rel.factionBId}`} className="border-b border-gray-800">
-                  <td className="p-2">{factionAName}</td>
-                  <td className="p-2">{factionBName}</td>
-                  <td className={`text-center p-2 ${getTrustColor(rel.trust)}`}>{rel.trust}</td>
-                  <td className="text-center p-2 bg-red-900">{rel.fear}</td>
-                  <td className="text-center p-2 bg-blue-900">{rel.alignment}</td>
+                <tr key={`${rel.factionAId}-${rel.factionBId}`} className="border-b border-cyan-500/10 hover:bg-cyan-500/5 transition-colors">
+                  <td className="p-2 text-cyan-300">{factionAName}</td>
+                  <td className="p-2 text-cyan-300">{factionBName}</td>
+                  <td className={`text-center p-2 font-black ${getTrustColor(rel.trust)}`}>{rel.trust}</td>
+                  <td className="text-center p-2 text-red-400 bg-red-900/20">{rel.fear}</td>
+                  <td className="text-center p-2 text-blue-400 bg-blue-900/20">{rel.alignment}</td>
                   <td className="p-2">
-                    <span className="px-2 py-1 bg-gray-800 rounded text-gray-300">{status}</span>
+                    <span className="px-1.5 py-0.5 bg-slate-800/80 rounded border border-slate-700 text-[9px] text-gray-300 shadow-[0_0_5px_rgba(0,0,0,0.5)]">{status}</span>
                   </td>
                 </tr>
               );

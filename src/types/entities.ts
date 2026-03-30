@@ -1,5 +1,5 @@
 import { Tick } from '../core/SimulationClock';
-import { FactionState, FactionRelationship, PassiveObjective } from './geopolitics';
+import { FactionState, FactionRelationship, PassiveObjective, IncidentReport, StockMarket } from './geopolitics';
 
 export type Coordinates = { lat: number; lng: number };
 
@@ -297,4 +297,6 @@ export interface GameState {
   factions: FactionState[];
   relationships: FactionRelationship[];
   activeObjectives: PassiveObjective[];
+  stockMarket?: StockMarket;
+  crashHistory: IncidentReport[];
 }
