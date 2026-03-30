@@ -7,11 +7,12 @@ services:
       dockerfile: Dockerfile
     container_name: stratosfear-game
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
       - "6969:6969"
     environment:
       - NODE_ENV=production
-      - VITE_API_URL=http://localhost:3000
+      - PORT=${PORT:-3000}
+      - VITE_API_URL=http://localhost:${PORT:-3000}
       - VITE_GAME_SPEED=1.0
     volumes:
       - ./concept_base:/app/concept_base:ro
