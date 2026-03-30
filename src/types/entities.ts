@@ -1,4 +1,5 @@
 import { Tick } from '../core/SimulationClock';
+import { FactionState, FactionRelationship, PassiveObjective } from './geopolitics';
 
 export type Coordinates = { lat: number; lng: number };
 
@@ -293,4 +294,7 @@ export interface GameState {
   buildMode: boolean;
   outerBaseExpansionMode: boolean;
   selectedBuildingType: BuildingType | null;
+  factions: FactionState[];
+  relationships: FactionRelationship[];
+  activeObjectives: PassiveObjective[];
 }
