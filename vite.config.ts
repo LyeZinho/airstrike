@@ -23,7 +23,7 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
     preview: {
-      port: parseInt(process.env.PORT || '3000', 10),
+      port: parseInt(process.env.PORT || '6959', 10),
       host: '0.0.0.0',
     },
   };
