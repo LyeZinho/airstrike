@@ -210,9 +210,12 @@ export enum GroundUnitType {
 }
 
 export enum IFFStatus {
-  FRIENDLY = 'FRIENDLY',
-  HOSTILE = 'HOSTILE',
   UNKNOWN = 'UNKNOWN',
+  BOGEY = 'BOGEY',
+  BANDIT = 'BANDIT',
+  CONFIRMED_TARGET = 'CONFIRMED_TARGET',
+  FRIENDLY = 'FRIENDLY',
+  ALLIED = 'ALLIED',
   NEUTRAL = 'NEUTRAL'
 }
 
@@ -220,6 +223,16 @@ export enum RWRStatus {
   SILENT = 'SILENT',
   TRACKED = 'TRACKED',
   LOCKED = 'LOCKED'
+}
+
+export interface IFFData {
+  aircraftId: string;
+  status: IFFStatus;
+  confidence: number;
+  detectionTime: Tick;
+  lastConfirmedTime: Tick;
+  transponderActive: boolean;
+  radarSignatureMatch: number;
 }
 
 export enum FormationType {
