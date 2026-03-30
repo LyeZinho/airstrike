@@ -14,6 +14,9 @@ services:
       - VITE_GAME_SPEED=1.0
     networks:
       - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.stratosfear.loadbalancer.server.port=6959"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6959"]
