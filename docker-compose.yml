@@ -6,7 +6,6 @@ services:
     container_name: stratosfear-game
     ports:
       - "6959:6959"
-      - "6969:6969"
     environment:
       - NODE_ENV=production
       - PORT=6959
@@ -14,8 +13,6 @@ services:
       - VITE_GAME_SPEED=1.0
     networks:
       - coolify
-    labels:
-      - "traefik.http.services.stratosfear.loadbalancer.server.port=6959"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6959"]
