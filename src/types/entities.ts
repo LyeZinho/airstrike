@@ -283,6 +283,10 @@ export interface GameState {
   neutralBases: Base[];
   aircrafts: Aircraft[];
   missiles: Missile[];
+  aircraft?: Map<string, Aircraft>;
+  missileMap?: Map<string, Missile>;
+  tick: number;
+  elapsedSeconds: number;
   groundUnits: GroundUnit[];
   selectedAircraftId: string | null;
   logs: string[];

@@ -119,9 +119,9 @@ export const TacticalMap: React.FC = React.memo(() => {
         }}
       />
       <div style={{ marginTop: "10px", fontSize: "12px" }}>
-        <div>Aircraft: {gameEngine.aircraft.size}</div>
-        <div>Missiles: {gameEngine.missiles.size}</div>
-        <div>Tick: {gameEngine.tick}</div>
+        <div>Aircraft: {gameEngine.aircraft instanceof Map ? gameEngine.aircraft.size : gameEngine.aircraft?.length || 0}</div>
+        <div>Missiles: {gameEngine.missiles instanceof Map ? gameEngine.missiles.size : gameEngine.missiles?.length || 0}</div>
+        <div>Tick: {gameEngine.gameState?.tick || 0}</div>
       </div>
     </div>
   );

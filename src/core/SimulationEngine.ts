@@ -305,12 +305,38 @@ export class SimulationEngine {
    */
   private updateStore(): void {
     const gameState: GameState = {
+      // Maps for performance
       aircraft: this.aircraft,
-      missiles: this.missiles,
-      bases: new Map(),
+      missileMap: this.missiles,
+      
+      // Arrays for UI compatibility
+      aircrafts: Array.from(this.aircraft.values()),
+      missiles: Array.from(this.missiles.values()),
+      
+      // Required state fields
       tick: simulationClock.getCurrentTick().count,
       isPaused: false,
       elapsedSeconds: simulationClock.getCurrentTick().count / 60,
+      
+      // Defaults for remaining GameState fields to prevent undefined errors
+      friendlyBase: {} as any,
+      hostileBases: [],
+      allyBases: [],
+      neutralBases: [],
+      groundUnits: [],
+      selectedAircraftId: null,
+      logs: [],
+      trailDensity: 1.0,
+      groups: [],
+      pendingTargetId: null,
+      pendingBuildings: [],
+      buildMode: false,
+      outerBaseExpansionMode: false,
+      selectedBuildingType: null,
+      factions: [],
+      relationships: [],
+      activeObjectives: [],
+      crashHistory: [],
     };
 
     useSimulationState.getState().updateGameState(gameState);

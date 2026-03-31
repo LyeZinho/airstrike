@@ -44,8 +44,8 @@ export function useGameEngine() {
 
   return {
     gameState,
-    aircraft: gameState.aircrafts,
-    missiles: gameState.missiles,
+    aircraft: (gameState as any).aircraft || gameState.aircrafts || new Map(),
+    missiles: gameState.missiles || new Map(),
 
     launchAircraft: (aircraftType: string) =>
       engineRef.current?.launchAircraft(aircraftType),
