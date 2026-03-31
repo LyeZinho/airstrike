@@ -278,6 +278,8 @@ export interface PlaneGroup {
 }
 
 // ── Q-Learning Brain ──────────────────────────────────────────
+export type QAction = 'ENGAGE' | 'NOTCH' | 'CRANK' | 'EVADE' | 'RETREAT' | 'TERRAIN_MASK';
+
 export interface QBrainData {
   experience: number;
   generation: number;
