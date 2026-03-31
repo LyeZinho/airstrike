@@ -233,3 +233,18 @@ export interface CasusBelli {
   expiresAt: number; // 1 week of game time
   hostilityLevel: number; // 0-100: how aggressive they can be
 }
+
+export interface FullIncidentReport {
+  id: string;
+  timestamp: number;
+  aircraftId: string;
+  aircraftType: string;
+  pilotName: string;
+  causeOfCrash: string;
+  location: { lat: number; lng: number };
+  survivorsCount: number;
+  financialDamage: number; // credits
+  factionInvolved?: string;
+  lawsuitFiled: boolean;
+  lawsuitId?: string;
+}
