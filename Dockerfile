@@ -9,7 +9,7 @@ COPY package*.json ./
 COPY pnpm-lock.yaml ./
 
 RUN npm install -g pnpm@9 && \
-    pnpm install --frozen-lockfile
+    NODE_ENV=development pnpm install --frozen-lockfile
 
 COPY . .
 
