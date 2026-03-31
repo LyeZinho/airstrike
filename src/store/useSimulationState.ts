@@ -13,21 +13,34 @@ interface SimulationStateStore {
 
 export const useSimulationState = create<SimulationStateStore>((set) => ({
   gameState: {
-    aircraft: new Map(),
-    missiles: new Map(),
-    bases: new Map(),
+    aircrafts: [],
+    missiles: [],
+    friendlyBase: {} as any,
+    hostileBases: [],
+    allyBases: [],
+    neutralBases: [],
+    groundUnits: [],
+    selectedAircraftId: null,
     tick: 0,
     isPaused: false,
     elapsedSeconds: 0,
+    logs: [],
+    trailDensity: 1.0,
+    groups: [],
+    pendingTargetId: null,
+    pendingBuildings: [],
+    buildMode: false,
+    outerBaseExpansionMode: false,
+    selectedBuildingType: null,
+    factions: [],
+    relationships: [],
+    activeObjectives: [],
+    crashHistory: [],
   },
 
   updateGameState: (state: GameState) => set({ gameState: state }),
 }));
 
-/**
- * Get current snapshot of game state.
- * Useful for reading state without subscribing to updates.
- */
 export const getGameState = (): GameState => {
   return useSimulationState.getState().gameState;
 };

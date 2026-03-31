@@ -108,6 +108,7 @@ export interface Aircraft {
   altitude: number;
   heading: number;
   speed: number;
+  throttle: number; // added for physics control
   fuel: number;
   health: number;
   targetId?: string;
@@ -148,23 +149,13 @@ export interface Missile {
 export interface MissileSpec {
   id: string;
   model: string;
-  type: MissileType;
-  speed: number;
-  rangeMax: number;
-  reloadTime: number;
-  seekerType?: SeekerType;
-  nez?: number; // No Escape Zone in km
-  cost?: number;
-}
-
-export type MissileSpecification = MissileSpec;
-
-export interface Building {
-  id: string;
-  type: BuildingType;
-  position: Coordinates;
-  builtAt: Tick;
-  health: number;
+  role: 'Air-to-Air' | 'Air-to-Ground' | 'Anti-Radiation' | 'Anti-Ship';
+  seeker: SeekerType;
+  rangeKm: number;
+  maxG?: number;
+  warheadKg?: number;
+  speedMach?: number;
+  costCredits: number;
 }
 
 export interface Base {
@@ -172,135 +163,50 @@ export interface Base {
   name: string;
   position: Coordinates;
   side: Side;
-  factionId?: string;
-  factionColor?: string;
+  factionId: string;
+  factionColor: string;
   credits: number;
   fuelStock: number;
   missileStock: Record<string, number>;
   radarRange: number;
-  radarMode: string;
+  radarMode: 'ActiveScan' | 'PassiveSearch' | 'Silent';
   maxAircraft: number;
   buildings: Building[];
-  resourceSpot?: ResourceSpot;
 }
 
-export interface ResourceSpot {
-  fuelCapacity: number;
-  fuelAvailable: number;
-  creditsStorage: number;
-  lastRestockTime: Tick;
-}
-
-export interface GroundUnit {
-  id: string;
-  model: string;
-  type: GroundUnitType;
-  side: Side;
-  position: Coordinates;
-  radarRangeKm: number;
-  missiles: Record<string, number>;
-  health: number;
-  status: string;
-  targetPosition?: Coordinates;
-  lastLaunchTime?: number;
-}
-
-export enum GroundUnitType {
-  SAM_BATTERY = 'SAM_BATTERY',
-  RADAR = 'RADAR',
-  TROOPS = 'TROOPS'
-}
-
-export enum IFFStatus {
-  UNKNOWN = 'UNKNOWN',
-  BOGEY = 'BOGEY',
-  BANDIT = 'BANDIT',
-  CONFIRMED_TARGET = 'CONFIRMED_TARGET',
-  FRIENDLY = 'FRIENDLY',
-  ALLIED = 'ALLIED',
-  NEUTRAL = 'NEUTRAL'
-}
-
-export enum RWRStatus {
-  SILENT = 'SILENT',
-  TRACKED = 'TRACKED',
-  LOCKED = 'LOCKED'
-}
-
-export interface IFFData {
-  aircraftId: string;
-  status: IFFStatus;
-  confidence: number;
-  detectionTime: Tick;
-  lastConfirmedTime: Tick;
-  transponderActive: boolean;
-  radarSignatureMatch: number;
-}
-
-export interface JammingEffect {
-  sourceId: string;
-  strength: number;
-  rangeKm: number;
-  frequencyBand: 'X_BAND' | 'S_BAND' | 'KU_BAND' | 'WIDEBAND';
-  effectiveAgainstRCS: number;
-}
-
-export interface RWRAlert {
-  radarType: string;
-  bearing: number;
-  distance: number;
-  threat: 'SAM' | 'AAA' | 'FIGHTER' | 'UNKNOWN';
-  lockOn: boolean;
-}
-
-export enum FormationType {
-  VIC = 'VIC',
-  LINE = 'LINE',
-  ECHELON = 'ECHELON'
-}
-
-export interface PlaneGroup {
-  id: string;
-  leaderId: string;
-  memberIds: string[];
-  type: FormationType;
-  name: string;
-  mission?: Mission;
-}
-
-export interface PendingBuilding {
+export interface Building {
   id: string;
   type: BuildingType;
   position: Coordinates;
-  assignedAircraftId?: string | null;
-  status: 'PENDING' | 'IN_TRANSIT' | 'CONSTRUCTING' | 'COMPLETED';
+  health: number;
+  isBuilt: boolean;
+  buildProgress: number; // 0-100
 }
 
 export interface GameState {
+  aircrafts: Aircraft[];
+  missiles: Missile[];
+  aircraft?: Map<string, Aircraft>; // legacy map support
+  missileMap?: Map<string, Missile>; // legacy map support
   friendlyBase: Base;
   hostileBases: Base[];
   allyBases: Base[];
   neutralBases: Base[];
-  aircrafts: Aircraft[];
-  missiles: Missile[];
-  aircraft?: Map<string, Aircraft>;
-  missileMap?: Map<string, Missile>;
-  tick: number;
-  elapsedSeconds: number;
-  groundUnits: GroundUnit[];
+  groundUnits: any[];
   selectedAircraftId: string | null;
-  logs: string[];
+  tick: Tick;
   isPaused: boolean;
+  elapsedSeconds: number;
+  logs: string[];
   trailDensity: number;
-  groups: PlaneGroup[];
+  groups: any[];
   pendingTargetId: string | null;
-  pendingBuildings: PendingBuilding[];
+  pendingBuildings: any[];
   buildMode: boolean;
   outerBaseExpansionMode: boolean;
-  selectedBuildingType: BuildingType | null;
+  selectedBuildingType: string | null;
   factions: FactionState[];
   relationships: FactionRelationship[];
   activeObjectives: PassiveObjective[];
-  stockMarket?: StockMarket;
-  crashHistory: IncidentReport[];
+  crashHistory: any[];
 }

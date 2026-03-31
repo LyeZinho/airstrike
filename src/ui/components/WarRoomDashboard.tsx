@@ -5,7 +5,9 @@ import { DiplomacyMatrix } from './DiplomacyMatrix';
 import { ObjectivesTracker } from './ObjectivesTracker';
 import { ResourcesDisplay } from './ResourcesDisplay';
 import { TacticalMap } from './TacticalMap';
-import { Radar, Menu, Globe, Shield, Activity, Target } from 'lucide-react';
+import { Radar, Menu, Globe, Shield, Activity, Target, Cpu, Clock, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 export const WarRoomDashboard: React.FC = () => {
   const {
@@ -22,11 +24,10 @@ export const WarRoomDashboard: React.FC = () => {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  const selectedFaction = useMemo(() => {
-    if (!selectedFactionId) return undefined;
-    return factions.get(selectedFactionId);
-  }, [selectedFactionId, factions]);
+  // Initialize and start the Simulation Engine
+  const { isPaused, togglePause } = useGameEngine();
 
+  // Factions for selector
   const factionNamesMap = useMemo(() => {
     const map = new Map<string, { name: string }>();
     factions.forEach((faction) => {
@@ -35,122 +36,172 @@ export const WarRoomDashboard: React.FC = () => {
     return map;
   }, [factions]);
 
+  // Selected Faction UI state
+  const selectedFaction = useMemo(() => {
+    if (!selectedFactionId) return undefined;
+    return factions.get(selectedFactionId);
+  }, [selectedFactionId, factions]);
+
   const activeFactionObjectives = useMemo(() => {
     if (!selectedFactionId) return [];
     return objectives.filter((obj) => obj.factionId === selectedFactionId);
   }, [selectedFactionId, objectives]);
 
   return (
-    <div className="relative w-full h-full bg-slate-950 text-cyan-500 font-mono text-xs uppercase tracking-wider overflow-hidden">
+    <div className="relative w-full h-full bg-[#020617] text-slate-300 font-sans text-xs tracking-wide overflow-hidden select-none">
       
-      {/* Background Layer: Tactical Map */}
-      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-70">
+      {/* Background Tactical Map */}
+      <div className="absolute inset-0 z-0">
         <TacticalMap />
       </div>
 
-      {/* Header Bar */}
-      <div className="absolute top-0 left-0 right-0 h-14 bg-slate-900/80 backdrop-blur-md border-b border-cyan-500/40 z-50 flex items-center justify-between px-4 sm:px-6 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setLeftOpen(!leftOpen)} className="hover:text-cyan-300 transition-colors">
-             <Menu size={24} />
+      {/* Header: Command Hub */}
+      <div className="absolute top-0 left-0 right-0 h-16 glass-panel z-50 flex items-center justify-between px-6 border-b border-emerald-500/20">
+        <div className="flex items-center gap-6">
+          <button 
+            onClick={() => setLeftOpen(!leftOpen)} 
+            className="text-emerald-500 p-2 rounded bg-emerald-500/5 border border-emerald-500/20 hover:bg-emerald-500/10 transition-colors"
+          >
+             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-3">
-            <Radar className="w-6 h-6 text-cyan-400 radar-sweep-anim aspect-square" />
-            <h1 className="text-xl font-black text-cyan-400 tracking-widest hidden sm:block italic">STRATOSFEAR COMMAND</h1>
+          
+          <div className="flex items-center gap-4">
+            <Radar className="w-8 h-8 text-emerald-500 radar-sweep-anim glow-text-emerald" />
+            <div className="flex flex-col">
+              <h1 className="text-xl font-bold tracking-widest text-emerald-500 leading-none">STRATOSFEAR</h1>
+              <span className="text-[8px] text-emerald-600 font-bold tracking-[0.4em] mt-1 pl-1">OS-INTEL TERMINAL ALPHA</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-6 sm:gap-8 text-[10px] font-bold tracking-widest">
-           <div className="flex flex-col items-end hidden sm:flex">
-              <span className="text-cyan-600/60 leading-none mb-1">SYSTEM TIME</span>
-              <span className="text-cyan-300">{(gameTime / 1000).toFixed(1)}S</span>
+
+        {/* Global Telemetry */}
+        <div className="hidden lg:flex items-center gap-10 bg-slate-950/60 px-8 py-3 rounded border border-white/5">
+           <div className="flex flex-col items-center">
+              <span className="text-[7px] text-slate-500 font-black tracking-widest uppercase mb-1">MISSION_TIME</span>
+              <div className="flex items-center gap-2">
+                <Clock size={12} className="text-emerald-600" />
+                <span className="text-xs font-bold text-white tabular-nums">{(gameTime / 100).toFixed(0)}</span>
+              </div>
            </div>
-           <div className="flex flex-col items-end">
-              <span className="text-cyan-600/60 leading-none mb-1">STATUS</span>
-              <span className={paused ? 'text-red-500 animate-pulse' : 'text-emerald-500'}>
-                {paused ? 'DEFCON 1 (PAUSED)' : 'DEFCON 5 (ACTIVE)'}
-              </span>
+           <div className="w-px h-6 bg-white/5"></div>
+           <div className="flex flex-col items-center">
+              <span className="text-[7px] text-slate-500 font-black tracking-widest uppercase mb-1">SYSTEM_STATUS</span>
+              <div className="flex items-center gap-2">
+                <Cpu size={12} className="text-emerald-500" />
+                <span className="text-xs font-bold text-emerald-400">READY</span>
+              </div>
            </div>
-           <button onClick={() => setRightOpen(!rightOpen)} className="hover:text-cyan-300 transition-colors ml-2 sm:ml-4">
-             <Activity size={24} />
-           </button>
+           <div className="w-px h-6 bg-white/5"></div>
+           <div className="flex flex-col items-center">
+              <span className="text-[7px] text-slate-500 font-black tracking-widest uppercase mb-1">OPS_MODE</span>
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={12} className={paused ? 'text-red-500 animate-pulse' : 'text-emerald-500'} />
+                <span className={`text-xs font-bold ${paused ? 'text-red-500' : 'text-emerald-300'}`}>
+                  {paused ? 'PAUSED' : 'COMBAT_READY'}
+                </span>
+              </div>
+           </div>
         </div>
+
+        <button 
+          onClick={() => setRightOpen(!rightOpen)} 
+          className="text-emerald-500 p-2 rounded bg-emerald-500/5 border border-emerald-500/20 hover:bg-emerald-500/10 transition-colors"
+        >
+          <Activity size={20} />
+        </button>
       </div>
 
-      {/* Left HUD Panel */}
-      <div className={`absolute left-0 top-14 bottom-0 w-80 bg-slate-900/85 backdrop-blur-md border-r border-cyan-500/30 z-40 transition-transform duration-300 transform ${leftOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col shadow-[10px_0_30px_rgba(0,0,0,0.5)]`}>
-         <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
-            
-            {/* Faction Select */}
-            <div className="space-y-3 shrink-0">
-              <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-2 text-cyan-400">
-                 <Shield className="w-4 h-4" />
-                 <h3 className="font-bold tracking-widest">FACTION SELECT</h3>
-              </div>
-              <div className="space-y-1">
-                {Array.from(factions.keys()).map((factionId) => (
-                  <button
-                    key={factionId}
-                    onClick={() => setSelectedFaction(factionId)}
-                    className={`w-full text-left px-3 py-2 text-[10px] tracking-wider transition-all border ${
-                      selectedFactionId === factionId
-                        ? 'bg-cyan-900/60 border-cyan-400 text-cyan-100 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
-                        : 'bg-slate-800/40 border-cyan-900/50 text-cyan-500/70 hover:bg-cyan-900/30 hover:border-cyan-500/50'
-                    }`}
-                  >
-                    {factionId}
-                  </button>
-                ))}
-              </div>
-            </div>
-            
-            {/* Resources */}
-            <div className="border border-cyan-500/20 bg-slate-950/60 p-3 rounded shrink-0">
-                <ResourcesDisplay faction={selectedFaction} factionName={selectedFactionId || undefined} />
-            </div>
+      <AnimatePresence>
+        {/* Left Side: Strategic Hub */}
+        {leftOpen && (
+          <motion.div 
+            initial={{ x: -400, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -400, opacity: 0 }}
+            className="absolute left-4 top-20 bottom-4 w-80 glass-panel z-40 rounded flex flex-col p-5 gap-6"
+          >
+             {/* Faction Command */}
+             <div className="space-y-3">
+                <div className="flex items-center gap-2 text-emerald-500/80 mb-2">
+                  <Shield className="w-4 h-4" />
+                  <h3 className="font-bold text-[9px] tracking-[0.2em] uppercase">FACTION_CORE</h3>
+                </div>
+                <div className="flex flex-col gap-2">
+                   {Array.from(factions.keys()).map((id) => (
+                      <button
+                        key={id}
+                        onClick={() => setSelectedFaction(id)}
+                        className={`w-full text-left px-4 py-2 text-[9px] font-bold tracking-widest border transition-all rounded ${
+                          selectedFactionId === id
+                            ? 'bg-emerald-500/20 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                            : 'bg-slate-900/60 border-white/5 text-slate-500 hover:border-emerald-500/30 hover:text-emerald-400'
+                        }`}
+                      >
+                        {id.replace('_', ' ')}
+                      </button>
+                   ))}
+                </div>
+             </div>
 
-            {/* Objectives */}
-            <div className="border border-cyan-500/20 bg-slate-950/60 p-3 rounded flex-1 flex flex-col min-h-0">
-               <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-2 mb-2 shrink-0 text-cyan-400">
-                 <Target className="w-4 h-4" />
-                 <h3 className="font-bold tracking-widest">OBJECTIVES</h3>
-               </div>
-               <div className="flex-1 overflow-y-auto custom-scrollbar">
-                 <ObjectivesTracker objectives={activeFactionObjectives} onObjectiveClick={(obj) => console.log(obj)} />
-               </div>
-            </div>
-            
-         </div>
-      </div>
+             {/* Resources Matrix */}
+             <div className="bg-slate-950/60 border border-white/5 p-4 rounded shadow-inner">
+                 <ResourcesDisplay faction={selectedFaction} factionName={selectedFactionId || undefined} />
+             </div>
 
-      {/* Right HUD Panel */}
-      <div className={`absolute right-0 top-14 bottom-0 w-80 sm:w-96 bg-slate-900/85 backdrop-blur-md border-l border-cyan-500/30 z-40 transition-transform duration-300 transform ${rightOpen ? 'translate-x-0' : 'translate-x-full'} flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.5)]`}>
-         <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
-            
-            {/* Intel Monitor */}
-            <div className="border border-cyan-500/20 bg-slate-950/60 p-3 rounded flex-1 flex flex-col min-h-[50%]">
-               <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-2 mb-2 shrink-0 text-cyan-400">
-                 <Globe className="w-4 h-4" />
-                 <h3 className="font-bold tracking-widest">GLOBAL INTEL</h3>
-               </div>
-               <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-                 <GlobalMonitor articles={newsArticles} onArticleClick={(a) => console.log(a)} />
-               </div>
-            </div>
+             {/* Mission Ops Tracker */}
+             <div className="flex-1 flex flex-col min-h-0 bg-slate-950/40 border border-white/5 rounded p-4 overflow-hidden">
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+                   <div className="flex items-center gap-2 text-emerald-500">
+                     <Target className="w-4 h-4" />
+                     <h3 className="font-bold text-[9px] tracking-[0.2em] uppercase">MISSION_PROTOCOL</h3>
+                   </div>
+                   <span className="text-[9px] text-emerald-600/60">{activeFactionObjectives.length} ACTV</span>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                   <ObjectivesTracker objectives={activeFactionObjectives} />
+                </div>
+             </div>
+          </motion.div>
+        )}
 
-            {/* Diplomacy Matrix */}
-            <div className="border border-cyan-500/20 bg-slate-950/60 p-3 rounded flex-1 flex flex-col min-h-[40%]">
-               <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-2 mb-2 shrink-0 text-cyan-400">
-                 <Activity className="w-4 h-4" />
-                 <h3 className="font-bold tracking-widest">DIPLOMATIC MATRIX</h3>
-               </div>
-               <div className="flex-1 overflow-auto custom-scrollbar pr-1">
-                  <DiplomacyMatrix relationships={relationships} factions={factionNamesMap} />
-               </div>
-            </div>
+        {/* Right Side: Intelligence & Intel */}
+        {rightOpen && (
+          <motion.div 
+            initial={{ x: 400, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 400, opacity: 0 }}
+            className="absolute right-4 top-20 bottom-4 w-96 glass-panel z-40 rounded flex flex-col p-5 gap-6"
+          >
+             {/* Global Intel Stream */}
+             <div className="flex-1 flex flex-col min-h-0 bg-slate-950/60 border border-white/5 rounded p-4 overflow-hidden">
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+                   <div className="flex items-center gap-2 text-emerald-500">
+                     <Globe className="w-4 h-4" />
+                     <h3 className="font-bold text-[9px] tracking-[0.2em] uppercase">INTEL_STREAM</h3>
+                   </div>
+                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></div>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                   <GlobalMonitor articles={newsArticles} />
+                </div>
+             </div>
 
-         </div>
-      </div>
+             {/* Geopolitical Relationship Matrix */}
+             <div className="flex-1 flex flex-col min-h-0 bg-slate-950/60 border border-white/5 rounded p-4 overflow-hidden">
+                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/10 text-emerald-500">
+                   <Activity className="w-4 h-4" />
+                   <h3 className="font-bold text-[9px] tracking-[0.2em] uppercase">DYNAMIC_DIPLOMACY</h3>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                   <DiplomacyMatrix relationships={relationships} factions={factionNamesMap} />
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
+      {/* Decorative Border Overlay */}
+      <div className="absolute inset-0 border border-emerald-500/5 pointer-events-none z-10 pointer-events-none"></div>
     </div>
   );
 };

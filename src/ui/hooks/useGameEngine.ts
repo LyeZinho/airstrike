@@ -1,23 +1,21 @@
 import { useEffect, useRef } from "react";
 import { simulationEngine } from "../../core/SimulationEngine";
-import { simulationClock } from "../../core/SimulationClock";
 import { useSimulationState } from "../../store/useSimulationState";
+import { useWarRoomStore } from "../../store/useWarRoomStore";
 import { useGameUI } from "../../store/useGameUI";
 import { Aircraft, Missile } from "../../types/entities";
 
 /**
  * Custom hook providing React integration with the simulation engine.
  * Handles lifecycle, tick scheduling, and state subscription.
- * 
- * Usage:
- *   const gameEngine = useGameEngine();
- *   gameEngine.launchAircraft("F-16C");
- *   gameEngine.fireMissile(aircraftId, targetId, "AIM-120C");
  */
 export function useGameEngine() {
   const gameState = useSimulationState((state) => state.gameState);
-  const updateGameState = useSimulationState((state) => state.updateGameState);
-  const { isPaused, togglePause } = useGameUI();
+  const { paused, togglePause } = useGameUI();
+  
+  // Also bring in critical WarRoom state for tracking
+  const newsArticles = useWarRoomStore((state) => state.newsArticles);
+  const objectives = useWarRoomStore((state) => state.objectives);
 
   const engineRef = useRef<typeof simulationEngine | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -27,7 +25,9 @@ export function useGameEngine() {
     engineRef.current.initialize();
 
     const tick = () => {
-      if (!isPaused) {
+      // The tick should run even if paused IF we want to allow UI updates,
+      // but usually we skip the simulation logic if paused.
+      if (!paused) {
         engineRef.current!.tick();
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -40,13 +40,13 @@ export function useGameEngine() {
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [isPaused]);
+  }, [paused]);
 
   return {
     gameState,
-    aircraft: (gameState as any).aircraft || gameState.aircrafts || new Map(),
-    missiles: gameState.missiles || new Map(),
-
+    newsArticles,
+    objectives,
+    
     launchAircraft: (aircraftType: string) =>
       engineRef.current?.launchAircraft(aircraftType),
 
@@ -54,6 +54,7 @@ export function useGameEngine() {
       engineRef.current?.fireMissile(aircraftId, targetId, missileType),
 
     togglePause,
+    isPaused: paused,
 
     reset: () => engineRef.current?.reset(),
 
