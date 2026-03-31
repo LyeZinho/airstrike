@@ -5,9 +5,11 @@ import { missileRegistry } from "../plugins/MissileRegistry";
 import { spatialIndex } from "../systems/SpatialIndex";
 import { detectionSystem } from "../systems/DetectionSystem";
 import { physicsSystem } from "../systems/PhysicsSystem";
+import { aiDecisionSystem } from "../systems/AIDecisionSystem";
 import { useSimulationState } from "../store/useSimulationState";
 import { useWarRoomStore } from "../store/useWarRoomStore";
-import { Aircraft, Missile, GameState, Base, Side } from "../types/entities";
+import { usePlayerStore } from "../store/usePlayerStore";
+import { Aircraft, Missile, GameState, Base, Side, AircraftStatus, MissileType } from "../types/entities";
 import {
   AircraftLaunchedEvent,
   MissileFireEvent,
@@ -16,7 +18,9 @@ import {
 import { factionRegistry } from "../plugins/FactionRegistry";
 import { passiveObjectiveSystem } from "../systems/PassiveObjectiveSystem";
 import { diplomacySystem } from "../systems/DiplomacySystem";
-import { FactionState, NewsArticle, PassiveObjective } from "../types/geopolitics";
+import { FactionState, NewsArticle, PassiveObjective, FullIncidentReport } from "../types/geopolitics";
+import { getDistanceKm } from "../utils/physicsUtils";
+import { nanoid } from "nanoid";
 
 /**
  * Coordinate Mapping: Transforms 2D grid coords (0-1000) to Latitude/Longitude (Black Sea Region approx)
@@ -130,8 +134,10 @@ export class SimulationEngine {
     const currentTick = simulationClock.advanceTick();
     const deltaTimeMs = SimulationClock.getDeltaTime() * 1000;
 
-    // Movement: Update Aircraft positions
-    this.aircraft.forEach((ac) => {
+    const allAircraft = Array.from(this.aircraft.values());
+    const allMissiles = Array.from(this.missiles.values());
+
+    allAircraft.forEach((ac) => {
       const headingRad = (ac.heading || 0) * Math.PI / 180;
       const speed = (ac.speed || 100);
       const throttle = (ac.throttle ?? 0.5);
@@ -140,17 +146,102 @@ export class SimulationEngine {
       ac.position.lat += Math.cos(headingRad) * step;
       ac.position.lng += Math.sin(headingRad) * step;
 
-      // Wrap-around or bound check if needed, but for now simple increment
       if (isNaN(ac.position.lat)) ac.position.lat = 44.0;
       if (isNaN(ac.position.lng)) ac.position.lng = 34.0;
+
+      if (ac.side === Side.HOSTILE && ac.status !== AircraftStatus.DESTROYED) {
+        const nearestEnemy = allAircraft.find(enemy => 
+          enemy.side === Side.FRIENDLY && 
+          enemy.status !== AircraftStatus.DESTROYED
+        );
+        if (nearestEnemy) {
+          aiDecisionSystem.applyQLearningAction(ac, nearestEnemy);
+        }
+      }
     });
 
-    // Update Missiles
-    this.missiles.forEach((m) => {
+    allMissiles.forEach((m) => {
       const headingRad = (m.heading || 0) * Math.PI / 180;
       const step = ((m.speed || 500) * deltaTimeMs) / 1000000;
       m.position.lat += Math.cos(headingRad) * step;
       m.position.lng += Math.sin(headingRad) * step;
+    });
+
+    const missilesToRemove: string[] = [];
+    const aircraftToDestroy: string[] = [];
+
+    allMissiles.forEach((missile) => {
+      const target = this.aircraft.get(missile.targetId);
+      if (!target) {
+        missilesToRemove.push(missile.id);
+        return;
+      }
+
+      const distance = getDistanceKm(missile.position, target.position);
+
+      if (distance < 1.0) {
+        target.status = AircraftStatus.DESTROYED;
+        target.health = 0;
+        aircraftToDestroy.push(target.id);
+
+        if (target.side === Side.FRIENDLY) {
+          const report: FullIncidentReport = {
+            id: nanoid(),
+            timestamp: Date.now(),
+            aircraftId: target.id,
+            aircraftType: target.specId,
+            pilotName: `Pilot-${target.id.slice(0, 6)}`,
+            causeOfCrash: 'ENEMY_FIRE',
+            location: target.position,
+            survivorsCount: Math.random() > 0.7 ? 1 : 0,
+            financialDamage: 5000000,
+            factionInvolved: missile.launcherId,
+            lawsuitFiled: false,
+          };
+          usePlayerStore.getState().recordCrash(report);
+        }
+
+        if (target.side === Side.HOSTILE) {
+          usePlayerStore.getState().earnCredits(5000);
+        }
+
+        missilesToRemove.push(missile.id);
+      } else if (missile.fuel <= 0) {
+        missilesToRemove.push(missile.id);
+      }
+    });
+
+    missilesToRemove.forEach(id => this.missiles.delete(id));
+
+    const hostileAircraft = allAircraft.filter(ac => ac.side === Side.HOSTILE && ac.status !== AircraftStatus.DESTROYED);
+    const friendlyAircraft = allAircraft.filter(ac => ac.side === Side.FRIENDLY && ac.status !== AircraftStatus.DESTROYED);
+
+    hostileAircraft.forEach((hostile) => {
+      friendlyAircraft.forEach((friendly) => {
+        const distance = getDistanceKm(hostile.position, friendly.position);
+        
+        if (distance < 15) {
+          const existingMissile = allMissiles.find(m => m.launcherId === hostile.id && m.targetId === friendly.id);
+          if (!existingMissile && Math.random() < 0.05 * (deltaTimeMs / 1000)) {
+            const missileId = `missile-${nanoid()}`;
+            const newMissile: Missile = {
+              id: missileId,
+              specId: 'R-77',
+              side: hostile.side,
+              position: { ...hostile.position },
+              altitude: hostile.altitude,
+              heading: hostile.heading,
+              speed: 1200,
+              targetId: friendly.id,
+              fuel: 60,
+              trail: [],
+              launcherId: hostile.id,
+              type: MissileType.MEDIUM_RANGE,
+            };
+            this.missiles.set(missileId, newMissile);
+          }
+        }
+      });
     });
 
     this.updateStore();

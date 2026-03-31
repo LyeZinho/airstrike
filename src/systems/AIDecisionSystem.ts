@@ -1,7 +1,13 @@
 import { FactionAction, FactionSpecification, FactionState } from '../types/geopolitics';
 import { nanoid } from 'nanoid';
+import { QTable, createAIState, AIState } from './QLearningSystem';
+import { getDistanceKm, calculateAspectAngle } from '../utils/physicsUtils';
+import { Aircraft, QAction, Side } from '../types/entities';
 
 export type BehaviorTreePosture = 'DEFENSIVE' | 'AGGRESSIVE' | 'WARTIME' | 'DIPLOMATIC' | 'COLLAPSED';
+
+// Q-learning tables for hostile aircraft (one per aircraft ID)
+const qTables = new Map<string, QTable>();
 
 interface ActionScore {
   actionType: FactionAction['type'];
@@ -181,6 +187,79 @@ export class AIDecisionSystem {
     return actions
       .map((actionType) => this.scoreAction(actionType, posture, factionState, threatLevel))
       .sort((a, b) => b.score - a.score);
+  }
+
+  applyQLearningAction(aircraft: Aircraft, nearestEnemy: Aircraft | null): void {
+    if (!nearestEnemy) return;
+
+    let qTable = qTables.get(aircraft.id);
+    if (!qTable) {
+      qTable = new QTable();
+      qTables.set(aircraft.id, qTable);
+    }
+
+    const distanceKm = getDistanceKm(aircraft.position, nearestEnemy.position);
+    const aspectAngle = calculateAspectAngle(
+      { lat: aircraft.position.lat, lng: aircraft.position.lng, heading: aircraft.heading },
+      { lat: nearestEnemy.position.lat, lng: nearestEnemy.position.lng, heading: nearestEnemy.heading }
+    );
+    const speedNormalized = (aircraft.speed || 0) / 900;
+    const rwrStatus = 'SILENT';
+
+    const state = createAIState(distanceKm, aspectAngle, speedNormalized, rwrStatus);
+    const action: QAction = qTable.chooseAction(state);
+
+    this.executeAction(aircraft, action, nearestEnemy);
+  }
+
+  private executeAction(aircraft: Aircraft, action: QAction, target: Aircraft): void {
+    const targetBearing = this.calculateBearing(aircraft.position, target.position);
+
+    switch (action) {
+      case 'ENGAGE':
+        aircraft.heading = targetBearing;
+        aircraft.throttle = 0.8;
+        break;
+
+      case 'NOTCH':
+        aircraft.heading = (targetBearing + 90) % 360;
+        aircraft.throttle = 0.7;
+        break;
+
+      case 'CRANK':
+        aircraft.heading = (targetBearing + 45) % 360;
+        aircraft.throttle = 0.75;
+        break;
+
+      case 'EVADE':
+        aircraft.heading = (targetBearing + 180) % 360;
+        aircraft.throttle = 0.95;
+        break;
+
+      case 'RETREAT':
+        aircraft.heading = (targetBearing + 180) % 360;
+        aircraft.throttle = 1.0;
+        break;
+
+      case 'TERRAIN_MASK':
+        if (aircraft.altitude && aircraft.altitude > 1000) {
+          aircraft.altitude = Math.max(500, aircraft.altitude - 500);
+        }
+        aircraft.throttle = 0.85;
+        break;
+    }
+  }
+
+  private calculateBearing(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+    const lat1 = (from.lat * Math.PI) / 180;
+    const lat2 = (to.lat * Math.PI) / 180;
+    const deltaLng = ((to.lng - from.lng) * Math.PI) / 180;
+
+    const y = Math.sin(deltaLng) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
+    const bearing = Math.atan2(y, x);
+
+    return ((bearing * 180) / Math.PI + 360) % 360;
   }
 }
 
