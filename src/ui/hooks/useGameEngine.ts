@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
-import { simulationEngine } from "../core/SimulationEngine";
-import { simulationClock } from "../core/SimulationClock";
-import { useSimulationState } from "../store/useSimulationState";
-import { useGameUI } from "../store/useGameUI";
-import { Aircraft, Missile } from "../types/entities";
+import { simulationEngine } from "../../core/SimulationEngine";
+import { simulationClock } from "../../core/SimulationClock";
+import { useSimulationState } from "../../store/useSimulationState";
+import { useGameUI } from "../../store/useGameUI";
+import { Aircraft, Missile } from "../../types/entities";
 
 /**
  * Custom hook providing React integration with the simulation engine.
@@ -44,10 +44,8 @@ export function useGameEngine() {
 
   return {
     gameState,
-    aircraft: gameState.aircraft,
+    aircraft: gameState.aircrafts,
     missiles: gameState.missiles,
-    tick: gameState.tick,
-    elapsedSeconds: gameState.elapsedSeconds,
 
     launchAircraft: (aircraftType: string) =>
       engineRef.current?.launchAircraft(aircraftType),

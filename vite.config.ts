@@ -22,5 +22,9 @@ export default defineConfig(({mode}) => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
+    preview: {
+      port: parseInt(process.env.PORT || '6959', 10),
+      host: '0.0.0.0',
+    },
   };
 });
