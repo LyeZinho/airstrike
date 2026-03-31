@@ -198,3 +198,38 @@ export interface ObjectiveTypeDefinition {
   estimatedDuration: number; // ticks
   riskLevel: number; // 0-100
 }
+
+// ── Legal System ──────────────────────────────────────────────
+export type LawsuitStatus = 'PENDING' | 'CONTESTED' | 'PAID' | 'WON' | 'LOST' | 'IGNORED';
+export type LawsuitAction = 'COMPLY' | 'CONTEST' | 'IGNORE';
+
+export interface LawsuitEvidence {
+  vectorOfAttack: boolean; // enemy was on attack vector
+  terrainMismatch: boolean; // claimed terrain ≠ actual terrain
+  witnessReports: number; // 0-100: reliability score
+  satelliteImagery: boolean; // have satellite proof
+}
+
+export interface Lawsuit {
+  id: string;
+  incidentReportId: string;
+  claimantFactionId: string; // who sued us
+  defendantFactionId: string; // us (player)
+  createdAt: number;
+  deadlineAt: number; // createdAt + 48 game hours
+  claimAmount: number; // total damage claimed
+  status: LawsuitStatus;
+  evidence: LawsuitEvidence;
+  lastAction?: LawsuitAction;
+  lastActionAt?: number;
+  contestionCost?: number; // legal fees if contested
+  juryBias: number; // 0-1: how biased jury is toward claimant (0=fair, 1=completely against us)
+}
+
+export interface CasusBelli {
+  factionId: string; // who declared it
+  reason: 'LAWSUIT_IGNORED' | 'LAWSUIT_LOST_WITH_BAD_FAITH' | 'REPEATED_VIOLATIONS';
+  declaredAt: number;
+  expiresAt: number; // 1 week of game time
+  hostilityLevel: number; // 0-100: how aggressive they can be
+}
