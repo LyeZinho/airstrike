@@ -123,6 +123,7 @@ export interface Aircraft {
   mission?: Mission;
   patrolTarget?: Coordinates;
   qBrain?: QBrainData;
+  factionId?: string;
 }
 
 export interface Mission {
