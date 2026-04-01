@@ -1,13 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { useWarRoomStore } from '../../store/useWarRoomStore';
+import { usePlayerStore } from '../../store/usePlayerStore';
+import { useSimulationState } from '../../store/useSimulationState';
 import { GlobalMonitor } from './GlobalMonitor';
 import { DiplomacyMatrix } from './DiplomacyMatrix';
 import { ObjectivesTracker } from './ObjectivesTracker';
 import { ResourcesDisplay } from './ResourcesDisplay';
 import { TacticalMap } from './TacticalMap';
+import { ScrambleModal } from './ScrambleModal';
+import { MissionControlModal } from './MissionControlModal';
+import { WelcomeTerminal } from './WelcomeTerminal';
+import { NewsModal } from './NewsModal';
+import { LegalDesk } from './LegalDesk';
+import { IncidentReportModal } from './IncidentReportModal';
+import { DetailedMarketView } from './DetailedMarketView';
+import { BuildMenu } from './BuildMenu';
+import { TacticalIntelModal } from './TacticalIntelModal';
 import { Radar, Menu, Globe, Shield, Activity, Target, Cpu, Clock, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGameEngine } from '../hooks/useGameEngine';
+import { Side } from '../../types/entities';
+import { StockMarket } from '../../types/geopolitics';
+
+const EMPTY_STOCK_MARKET: StockMarket = {
+  activeFactions: [],
+  currentPrices: {},
+  priceHistory: {},
+  lastUpdateTick: 0,
+};
 
 export const WarRoomDashboard: React.FC = () => {
   const {
@@ -23,6 +43,12 @@ export const WarRoomDashboard: React.FC = () => {
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('airstrike_welcomed'));
+
+  const { credits, fuel, missileStock } = usePlayerStore((s) => s.base);
+  const { gameState } = useSimulationState();
+  const friendlyAircrafts = (gameState?.aircrafts ?? []).filter(a => a.side === Side.FRIENDLY);
 
   // Initialize and start the Simulation Engine
   const { isPaused, togglePause } = useGameEngine();
@@ -50,6 +76,50 @@ export const WarRoomDashboard: React.FC = () => {
   return (
     <div className="relative w-full h-full bg-[#020617] text-slate-300 font-sans text-xs tracking-wide overflow-hidden select-none">
       
+      {/* HUD Bar: Resources + Action Buttons */}
+      <div className="absolute top-16 left-0 right-0 h-10 glass-panel z-50 flex items-center justify-between px-4 border-b border-emerald-500/10">
+        {/* Resource Strip */}
+        <div className="flex items-center gap-5 font-mono text-xs">
+          <span className="text-emerald-400">💰 {credits.toLocaleString()}</span>
+          <span className="text-blue-400">⛽ {(fuel / 1000).toFixed(0)}kL</span>
+          <span className="text-red-400">🚀 ×{missileStock}</span>
+        </div>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1">
+          {(['SCRAMBLE', 'MISSION CTRL', 'INTEL', 'NEWS', 'MARKETS', 'LEGAL', 'INCIDENTS', 'BUILD'] as const).map((label) => {
+            const key = label.toLowerCase().replace(' ', '_');
+            return (
+              <button
+                key={key}
+                className={`hud-btn${activeModal === key ? ' active' : ''}`}
+                onClick={() => setActiveModal(activeModal === key ? null : key)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Modals */}
+      <TacticalIntelModal isOpen={activeModal === 'intel'} onClose={() => setActiveModal(null)} />
+      <ScrambleModal isOpen={activeModal === 'scramble'} onClose={() => setActiveModal(null)} />
+      <MissionControlModal isOpen={activeModal === 'mission_ctrl'} onClose={() => setActiveModal(null)} />
+      <NewsModal isOpen={activeModal === 'news'} onClose={() => setActiveModal(null)} />
+      <LegalDesk isOpen={activeModal === 'legal'} onClose={() => setActiveModal(null)} />
+      <IncidentReportModal isOpen={activeModal === 'incidents'} onClose={() => setActiveModal(null)} />
+      {activeModal === 'markets' && (
+        <DetailedMarketView stockMarket={EMPTY_STOCK_MARKET} onClose={() => setActiveModal(null)} />
+      )}
+      {activeModal === 'build' && (
+        <BuildMenu onClose={() => setActiveModal(null)} />
+      )}
+
+      {/* Welcome Terminal — shown on first load */}
+      {showWelcome && (
+        <WelcomeTerminal isOpen={showWelcome} onClose={() => { setShowWelcome(false); localStorage.setItem('airstrike_welcomed', '1'); }} />
+      )}
+
       {/* Background Tactical Map */}
       <div className="absolute inset-0 z-0">
         <TacticalMap />
@@ -118,7 +188,7 @@ export const WarRoomDashboard: React.FC = () => {
             initial={{ x: -400, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -400, opacity: 0 }}
-            className="absolute left-4 top-20 bottom-4 w-80 glass-panel z-40 rounded flex flex-col p-5 gap-6"
+            className="absolute left-4 top-[6.5rem] bottom-4 w-80 glass-panel z-40 rounded flex flex-col p-5 gap-6"
           >
              {/* Faction Command */}
              <div className="space-y-3">
@@ -161,6 +231,29 @@ export const WarRoomDashboard: React.FC = () => {
                    <ObjectivesTracker objectives={activeFactionObjectives} />
                 </div>
              </div>
+
+             <div className="mt-2 space-y-1">
+               <div className="text-[9px] text-emerald-500/80 font-bold tracking-widest uppercase mb-2">AIRCRAFT CTRL</div>
+               {friendlyAircrafts.map((ac) => (
+                 <div key={ac.id} className="bg-slate-950/60 border border-white/5 rounded p-2">
+                   <div className="text-[9px] font-bold text-emerald-400 truncate mb-1">{ac.specId || ac.id.slice(0,8)}</div>
+                   <div className="flex gap-1">
+                     <button 
+                       className="text-[8px] px-2 py-0.5 border border-emerald-700/50 text-emerald-400 hover:bg-emerald-700/20 font-mono"
+                       onClick={() => { usePlayerStore.getState().addFuel(1000); usePlayerStore.getState().addMissionLog(`${ac.specId} landed`); }}
+                     >LAND</button>
+                     <button 
+                       className="text-[8px] px-2 py-0.5 border border-yellow-700/50 text-yellow-400 hover:bg-yellow-700/20 font-mono"
+                       onClick={() => console.log('ECM toggle', ac.id)}
+                     >ECM</button>
+                     <button 
+                       className="text-[8px] px-2 py-0.5 border border-red-700/50 text-red-400 hover:bg-red-700/20 font-mono"
+                       onClick={() => usePlayerStore.getState().spendMissile()}
+                     >FIRE</button>
+                   </div>
+                 </div>
+               ))}
+             </div>
           </motion.div>
         )}
 
@@ -170,7 +263,7 @@ export const WarRoomDashboard: React.FC = () => {
             initial={{ x: 400, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 400, opacity: 0 }}
-            className="absolute right-4 top-20 bottom-4 w-96 glass-panel z-40 rounded flex flex-col p-5 gap-6"
+            className="absolute right-4 top-[6.5rem] bottom-4 w-96 glass-panel z-40 rounded flex flex-col p-5 gap-6"
           >
              {/* Global Intel Stream */}
              <div className="flex-1 flex flex-col min-h-0 bg-slate-950/60 border border-white/5 rounded p-4 overflow-hidden">

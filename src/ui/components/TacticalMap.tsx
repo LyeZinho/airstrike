@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap, CircleMarker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useSimulationState } from "../../store/useSimulationState";
 import { useGameUI } from "../../store/useGameUI";
+import { usePlayerStore } from "../../store/usePlayerStore";
 import { Side } from "../../types/entities";
 
 // Fix Leaflet Default Icon issue in React
@@ -57,9 +58,31 @@ const MapController = ({ center }: { center: [number, number] }) => {
   return null;
 };
 
+const BuildModeHandler: React.FC = () => {
+  const { buildMode, selectedBuildingType, setBuildMode, setSelectedBuildingType } = useGameUI();
+  const startBuilding = usePlayerStore((s) => s.startBuilding);
+  useMapEvents({
+    click(e) {
+      if (!buildMode || !selectedBuildingType) return;
+      const building = {
+        id: `building-${Date.now()}`,
+        type: selectedBuildingType as any,
+        position: { lat: e.latlng.lat, lng: e.latlng.lng },
+        assignedAircraftId: null,
+        status: 'PENDING' as const,
+      };
+      startBuilding(building);
+      setBuildMode(false);
+      setSelectedBuildingType(null);
+    },
+  });
+  return null;
+};
+
 export const TacticalMap: React.FC = () => {
   const { gameState } = useSimulationState();
   const { selectedAircraftId, selectAircraft } = useGameUI();
+  const buildings = usePlayerStore((s) => s.base.buildings);
 
   const { 
     friendlyBase, 
@@ -96,6 +119,7 @@ export const TacticalMap: React.FC = () => {
         />
         
         <MapController center={initialCenter} />
+        <BuildModeHandler />
 
         {/* Friendly Base */}
         {friendlyBase?.position && (
@@ -173,6 +197,16 @@ export const TacticalMap: React.FC = () => {
             center={[m.position.lat, m.position.lng]}
             radius={200}
             pathOptions={{ color: "#fbbf24", fillColor: "#fbbf24", fillOpacity: 1 }}
+          />
+        ))}
+
+        {/* Placed Buildings */}
+        {buildings.map((building, idx) => (
+          <CircleMarker
+            key={building.id || `building-${idx}`}
+            center={[building.position.lat, building.position.lng]}
+            radius={8}
+            pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.8 }}
           />
         ))}
       </MapContainer>

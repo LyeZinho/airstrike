@@ -317,13 +317,27 @@ export class SimulationEngine {
     } as any;
   }
 
-  launchAircraft(aircraftType: string): string {
+  launchAircraft(aircraftType: string, fuelFraction = 0.8): string {
     const base = Array.from(this.bases.values()).find(b => b.side === Side.FRIENDLY);
-    if (!base) return "";
+    if (!base) return '';
     const id = `${aircraftType}-${Date.now()}`;
     const ac = this.createAircraft(id, aircraftType, { ...base.position, altitude: 0 });
+    const spec = aircraftRegistry.get(aircraftType);
+    if (spec) ac.fuel = spec.fuelCapacityL * Math.max(0.2, Math.min(1, fuelFraction));
+    ac.status = AircraftStatus.CRUISE;
     this.aircraft.set(id, ac);
+    this.updateStore();
     return id;
+  }
+
+  setAircraftMission(aircraftId: string, missionType: import('../types/entities').MissionType): void {
+    const ac = this.aircraft.get(aircraftId);
+    if (!ac) return;
+    ac.mission = {
+      type: missionType,
+      startTime: simulationClock.getCurrentTick(),
+    };
+    this.updateStore();
   }
 
   fireMissile(aircraftId: string, targetId: string, missileType: string): void { }
