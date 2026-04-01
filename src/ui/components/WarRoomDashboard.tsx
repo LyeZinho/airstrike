@@ -16,6 +16,7 @@ import { IncidentReportModal } from './IncidentReportModal';
 import { DetailedMarketView } from './DetailedMarketView';
 import { BuildMenu } from './BuildMenu';
 import { TacticalIntelModal } from './TacticalIntelModal';
+import { FlightControlCenter } from './FlightControlCenter';
 import { Radar, Menu, Globe, Shield, Activity, Target, Cpu, Clock, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGameEngine } from '../hooks/useGameEngine';
@@ -86,7 +87,7 @@ export const WarRoomDashboard: React.FC = () => {
         </div>
         {/* Action Buttons */}
         <div className="flex items-center gap-1">
-          {(['SCRAMBLE', 'MISSION CTRL', 'INTEL', 'NEWS', 'MARKETS', 'LEGAL', 'INCIDENTS', 'BUILD'] as const).map((label) => {
+          {(['SCRAMBLE', 'MISSION CTRL', 'INTEL', 'NEWS', 'MARKETS', 'LEGAL', 'INCIDENTS', 'BUILD', 'FCC'] as const).map((label) => {
             const key = label.toLowerCase().replace(' ', '_');
             return (
               <button
@@ -114,6 +115,7 @@ export const WarRoomDashboard: React.FC = () => {
       {activeModal === 'build' && (
         <BuildMenu onClose={() => setActiveModal(null)} />
       )}
+      <FlightControlCenter isOpen={activeModal === 'fcc'} onClose={() => setActiveModal(null)} />
 
       {/* Welcome Terminal — shown on first load */}
       {showWelcome && (
@@ -185,6 +187,7 @@ export const WarRoomDashboard: React.FC = () => {
         {/* Left Side: Strategic Hub */}
         {leftOpen && (
           <motion.div 
+            key="left-panel"
             initial={{ x: -400, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -400, opacity: 0 }}
@@ -260,6 +263,7 @@ export const WarRoomDashboard: React.FC = () => {
         {/* Right Side: Intelligence & Intel */}
         {rightOpen && (
           <motion.div 
+            key="right-panel"
             initial={{ x: 400, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 400, opacity: 0 }}

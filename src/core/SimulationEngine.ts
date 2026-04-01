@@ -138,31 +138,59 @@ export class SimulationEngine {
     const allMissiles = Array.from(this.missiles.values());
 
     allAircraft.forEach((ac) => {
-      const headingRad = (ac.heading || 0) * Math.PI / 180;
-      const speed = (ac.speed || 100);
-      const throttle = (ac.throttle ?? 0.5);
-      const step = (speed * throttle * deltaTimeMs) / 1000000;
+      if (ac.status === AircraftStatus.DESTROYED) return;
 
-      ac.position.lat += Math.cos(headingRad) * step;
-      ac.position.lng += Math.sin(headingRad) * step;
+      if (ac.flightPlan && ac.flightPlan.length > 0 && !ac.holdPosition) {
+        const wp = ac.flightPlan[0];
+
+        const dLat = wp.lat - ac.position.lat;
+        const dLng = wp.lng - ac.position.lng;
+        const targetHeading = ((Math.atan2(dLng, dLat) * 180 / Math.PI) + 360) % 360;
+
+        let headingDelta = targetHeading - ac.heading;
+        if (headingDelta > 180) headingDelta -= 360;
+        if (headingDelta < -180) headingDelta += 360;
+        const turn = Math.max(-3, Math.min(3, headingDelta));
+        ac.heading = ((ac.heading + turn) + 360) % 360;
+
+        const wpSpeed = wp.speedKmh ?? ac.speed;
+        const headingRad = ac.heading * Math.PI / 180;
+        const step = (wpSpeed * (ac.throttle ?? 0.5) * deltaTimeMs) / 40000000;
+        ac.position.lat += Math.cos(headingRad) * step;
+        ac.position.lng += Math.sin(headingRad) * step;
+
+        const distDeg = Math.sqrt(dLat * dLat + dLng * dLng);
+        if (distDeg < 0.018) {
+          ac.flightPlan = ac.flightPlan.slice(1);
+        }
+      } else if (ac.side === Side.HOSTILE && !ac.holdPosition) {
+        const headingRad = (ac.heading || 0) * Math.PI / 180;
+        const speed = ac.speed || 800;
+        const throttle = ac.throttle ?? 0.5;
+        // 40_000_000 ≈ 3600 s/h × 111 km/deg × 100 (game time-scale) → speed (km/h) × throttle × deltaTimeMs → lat/lng degrees
+        const step = (speed * throttle * deltaTimeMs) / 40000000;
+        ac.position.lat += Math.cos(headingRad) * step;
+        ac.position.lng += Math.sin(headingRad) * step;
+      }
 
       if (isNaN(ac.position.lat)) ac.position.lat = 44.0;
       if (isNaN(ac.position.lng)) ac.position.lng = 34.0;
 
-      if (ac.side === Side.HOSTILE && ac.status !== AircraftStatus.DESTROYED) {
+      if (ac.side === Side.HOSTILE) {
         const nearestEnemy = allAircraft.find(enemy => 
           enemy.side === Side.FRIENDLY && 
           enemy.status !== AircraftStatus.DESTROYED
         );
-        if (nearestEnemy) {
+        if (nearestEnemy && (currentTick - (ac.aiDecisionTick ?? 0)) >= 90) {
           aiDecisionSystem.applyQLearningAction(ac, nearestEnemy);
+          ac.aiDecisionTick = currentTick;
         }
       }
     });
 
     allMissiles.forEach((m) => {
       const headingRad = (m.heading || 0) * Math.PI / 180;
-      const step = ((m.speed || 500) * deltaTimeMs) / 1000000;
+      const step = ((m.speed || 500) * deltaTimeMs) / 40000000;
       m.position.lat += Math.cos(headingRad) * step;
       m.position.lng += Math.sin(headingRad) * step;
     });
@@ -231,7 +259,7 @@ export class SimulationEngine {
               position: { ...hostile.position },
               altitude: hostile.altitude,
               heading: hostile.heading,
-              speed: 1200,
+              speed: 3500,
               targetId: friendly.id,
               fuel: 60,
               trail: [],
@@ -302,8 +330,8 @@ export class SimulationEngine {
       status: 'CRUISE' as 'CRUISE',
       position: { ...position },
       altitude: position.altitude,
-      heading: id.includes('Su') ? 180 : 0,
-      speed: 100,
+      heading: id.includes('Su') ? 225 : 45,
+      speed: 800,
       throttle: 0.5,
       fuel: spec.fuelCapacityL * 0.8,
       health: 100,
@@ -324,10 +352,65 @@ export class SimulationEngine {
     const ac = this.createAircraft(id, aircraftType, { ...base.position, altitude: 0 });
     const spec = aircraftRegistry.get(aircraftType);
     if (spec) ac.fuel = spec.fuelCapacityL * Math.max(0.2, Math.min(1, fuelFraction));
+    const hostiles = Array.from(this.aircraft.values()).filter(
+      a => a.side === Side.HOSTILE && a.status !== AircraftStatus.DESTROYED
+    );
+    if (hostiles.length > 0) {
+      const nearest = hostiles[0];
+      const dLat = nearest.position.lat - base.position.lat;
+      const dLng = nearest.position.lng - base.position.lng;
+      ac.heading = ((Math.atan2(dLng, dLat) * 180 / Math.PI) + 360) % 360;
+    } else {
+      ac.heading = 45;
+    }
     ac.status = AircraftStatus.CRUISE;
     this.aircraft.set(id, ac);
     this.updateStore();
     return id;
+  }
+
+  setFlightPlan(
+    aircraftId: string,
+    waypoints: Array<{ lat: number; lng: number; altitudeFt?: number; speedKmh?: number }>
+  ): void {
+    const ac = this.aircraft.get(aircraftId);
+    if (!ac) return;
+    ac.flightPlan = [...waypoints];
+    ac.holdPosition = false;
+    if (ac.status === AircraftStatus.HANGAR) ac.status = AircraftStatus.CRUISE;
+    this.updateStore();
+  }
+
+  orderRTB(aircraftId: string): void {
+    const ac = this.aircraft.get(aircraftId);
+    const base = Array.from(this.bases.values()).find(b => b.side === Side.FRIENDLY);
+    if (!ac || !base) return;
+    ac.flightPlan = [{ lat: base.position.lat, lng: base.position.lng }];
+    ac.status = AircraftStatus.RTB;
+    ac.holdPosition = false;
+    this.updateStore();
+  }
+
+  orderTakeoff(aircraftId: string): void {
+    const ac = this.aircraft.get(aircraftId);
+    if (!ac) return;
+    const hostiles = Array.from(this.aircraft.values()).filter(
+      a => a.side === Side.HOSTILE && a.status !== AircraftStatus.DESTROYED
+    );
+    const base = Array.from(this.bases.values()).find(b => b.side === Side.FRIENDLY);
+    if (hostiles.length > 0) {
+      const nearest = hostiles[0];
+      const dLat = nearest.position.lat - (base?.position.lat ?? ac.position.lat);
+      const dLng = nearest.position.lng - (base?.position.lng ?? ac.position.lng);
+      ac.heading = ((Math.atan2(dLng, dLat) * 180 / Math.PI) + 360) % 360;
+      ac.flightPlan = [{ lat: nearest.position.lat, lng: nearest.position.lng }];
+    } else {
+      ac.heading = 45;
+      ac.flightPlan = [];
+    }
+    ac.status = AircraftStatus.TAKEOFF;
+    ac.holdPosition = false;
+    this.updateStore();
   }
 
   setAircraftMission(aircraftId: string, missionType: import('../types/entities').MissionType): void {

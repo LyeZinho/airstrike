@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap, CircleMarker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -50,19 +50,25 @@ const getAircraftIcon = (side: Side, heading: number, isSelected: boolean) => {
 
 const MapController = ({ center }: { center: [number, number] }) => {
   const map = useMap();
+  const hasCenteredRef = useRef(false);
   useEffect(() => {
-    if (center && center[0] !== 0) {
+    if (!hasCenteredRef.current && center && center[0] !== 0) {
       map.setView(center, map.getZoom());
+      hasCenteredRef.current = true;
     }
   }, [center, map]);
   return null;
 };
 
 const BuildModeHandler: React.FC = () => {
-  const { buildMode, selectedBuildingType, setBuildMode, setSelectedBuildingType } = useGameUI();
+  const { buildMode, selectedBuildingType, setBuildMode, setSelectedBuildingType, waypointMode, setPendingMapWaypoint } = useGameUI();
   const startBuilding = usePlayerStore((s) => s.startBuilding);
   useMapEvents({
     click(e) {
+      if (waypointMode) {
+        setPendingMapWaypoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+        return;
+      }
       if (!buildMode || !selectedBuildingType) return;
       const building = {
         id: `building-${Date.now()}`,

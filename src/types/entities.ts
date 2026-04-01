@@ -124,6 +124,9 @@ export interface Aircraft {
   patrolTarget?: Coordinates;
   qBrain?: QBrainData;
   factionId?: string;
+  flightPlan?: Array<{ lat: number; lng: number; altitudeFt?: number; speedKmh?: number }>;
+  aiDecisionTick?: number;
+  holdPosition?: boolean;
 }
 
 export interface Mission {

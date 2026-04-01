@@ -15,11 +15,9 @@ export const ScrambleModal: React.FC<ScrambleModalProps> = ({ isOpen, onClose })
 
   const aircraftTypes = ['F-16C', 'MiG-29', 'Gripen', 'Rafale'];
 
-  const playerState = usePlayerStore((state) => ({
-    credits: state.base.credits,
-    fuel: state.base.fuel,
-    missileStock: state.base.missileStock,
-  }));
+  const credits = usePlayerStore((s) => s.base.credits);
+  const fuel = usePlayerStore((s) => s.base.fuel);
+  const missileStock = usePlayerStore((s) => s.base.missileStock);
 
   useEffect(() => {
     if (isOpen) {
@@ -114,15 +112,15 @@ export const ScrambleModal: React.FC<ScrambleModalProps> = ({ isOpen, onClose })
               <div className="grid grid-cols-3 gap-3 pt-3 border-t border-emerald-500/20">
                 <div className="text-center">
                   <div className="text-[8px] opacity-40 uppercase mb-1">Credits</div>
-                  <div className="text-xs font-bold">{playerState.credits.toLocaleString()}</div>
+                  <div className="text-xs font-bold">{credits.toLocaleString()}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-[8px] opacity-40 uppercase mb-1">Fuel Stock</div>
-                  <div className="text-xs font-bold">{playerState.fuel.toLocaleString()}L</div>
+                  <div className="text-xs font-bold">{fuel.toLocaleString()}L</div>
                 </div>
                 <div className="text-center">
                   <div className="text-[8px] opacity-40 uppercase mb-1">Missiles</div>
-                  <div className="text-xs font-bold">{playerState.missileStock}</div>
+                  <div className="text-xs font-bold">{missileStock}</div>
                 </div>
               </div>
 
