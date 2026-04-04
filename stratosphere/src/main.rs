@@ -17,6 +17,7 @@ use airstrike_engine::ui::camera::Camera;
 use airstrike_engine::ui::grid::draw_grid;
 use airstrike_engine::ui::tactical::{draw_aircraft, draw_radar_sweep, AircraftRenderState};
 use airstrike_engine::ui::tile_manager::{visible_tiles, TileManager};
+use simulation::missile::MissilePhase;
 use simulation::world::World;
 
 const WINDOW_W: u32 = 1280;
@@ -251,11 +252,12 @@ fn main() -> Result<(), String> {
                         keycode: Some(Keycode::D),
                         ..
                     } => {
-                        if let Some(ac) = world
-                            .aircraft
-                            .iter()
-                            .find(|a| matches!(a.phase, airstrike_engine::core::aircraft::FlightPhase::ColdDark))
-                        {
+                        if let Some(ac) = world.aircraft.iter().find(|a| {
+                            matches!(
+                                a.phase,
+                                airstrike_engine::core::aircraft::FlightPhase::ColdDark
+                            )
+                        }) {
                             let id = ac.id;
                             world.dispatch_aircraft(id);
                         }
@@ -333,6 +335,23 @@ fn main() -> Result<(), String> {
                     &render_states,
                     &camera,
                 );
+
+                for missile in &world.missiles {
+                    let (wx, wy) = airstrike_engine::core::geo::lat_lon_to_world(
+                        missile.lat,
+                        missile.lon,
+                        camera.zoom,
+                    );
+                    let (sx, sy) = camera.world_to_screen(wx, wy);
+                    let color = match missile.phase {
+                        MissilePhase::Midcourse => Color::RGB(200, 200, 200),
+                        MissilePhase::Pitbull => Color::RGB(255, 200, 0),
+                        MissilePhase::Terminal => Color::RGB(255, 60, 60),
+                        _ => continue,
+                    };
+                    canvas.set_draw_color(color);
+                    canvas.fill_rect(Rect::new(sx as i32 - 2, sy as i32 - 2, 4, 4))?;
+                }
 
                 let tracked_count = world.aircraft.iter().filter(|a| a.is_detected).count();
                 render_hud(

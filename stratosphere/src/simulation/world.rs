@@ -2,13 +2,18 @@ use airstrike_engine::core::aircraft::{Aircraft, FlightPhase, Side};
 use airstrike_engine::core::airport::{Airport, AirportDb, AirportType};
 use airstrike_engine::core::radar::RadarSystem;
 
+use super::missile::{resolve_hit, HitResult, Missile, MissilePhase};
+
 pub struct World {
     pub aircraft: Vec<Aircraft>,
     pub airports: Vec<Airport>,
     pub radar: RadarSystem,
     pub credits: u32,
     pub game_time_s: f32,
+    pub missiles: Vec<Missile>,
+    pub brevity_log: Vec<String>,
     next_id: u32,
+    next_missile_id: u32,
 }
 
 impl World {
@@ -19,7 +24,10 @@ impl World {
             radar: RadarSystem::new(38.716, -9.142, 50.0, 400.0),
             credits: 0,
             game_time_s: 0.0,
+            missiles: Vec::new(),
+            brevity_log: Vec::new(),
             next_id: 1,
+            next_missile_id: 1,
         }
     }
 
@@ -31,7 +39,10 @@ impl World {
             radar: RadarSystem::new(38.716, -9.142, 50.0, 400.0),
             credits: starting_credits,
             game_time_s: 0.0,
+            missiles: Vec::new(),
+            brevity_log: Vec::new(),
             next_id: 1,
+            next_missile_id: 1,
         };
         for airport in &airports {
             let model = match airport.airport_type {
@@ -57,6 +68,26 @@ impl World {
             world.aircraft.push(ac);
         }
         world
+    }
+
+    pub fn launch_missile(&mut self, launcher_id: u32, target_id: u32, weapon_id: &'static str) {
+        if let Some(launcher) = self.aircraft.iter().find(|a| a.id == launcher_id) {
+            let m = Missile::new(
+                self.next_missile_id,
+                launcher_id,
+                target_id,
+                launcher.lat,
+                launcher.lon,
+                launcher.altitude_ft,
+                weapon_id,
+            );
+            self.next_missile_id += 1;
+            self.brevity_log.push(format!(
+                "Fox 3! {} fires {} at target {}",
+                launcher.callsign, weapon_id, target_id
+            ));
+            self.missiles.push(m);
+        }
     }
 
     pub fn dispatch_aircraft(&mut self, id: u32) {
@@ -136,6 +167,45 @@ impl World {
             ac.is_detected = *detected;
             ac.detection_confidence = if *detected { 1.0 } else { 0.0 };
         }
+
+        for m in &mut self.missiles {
+            if let Some(target) = self.aircraft.iter().find(|a| a.id == m.target_id) {
+                m.target_lat = target.lat;
+                m.target_lon = target.lon;
+            }
+            m.advance(dt);
+        }
+
+        let mut destroyed_ids: Vec<u32> = Vec::new();
+        for m in &mut self.missiles {
+            if m.phase == MissilePhase::Terminal {
+                let (target_rcs, target_id) = self
+                    .aircraft
+                    .iter()
+                    .find(|a| a.id == m.target_id)
+                    .map(|a| (a.rcs_base, a.id))
+                    .unwrap_or((1.0, m.target_id));
+                match resolve_hit(target_rcs, 1.0, false, m.weapon_id, target_id) {
+                    HitResult::Hit(id) => {
+                        destroyed_ids.push(id);
+                        self.brevity_log
+                            .push(format!("Splash! Target {} destroyed.", id));
+                    }
+                    HitResult::Miss => {
+                        self.brevity_log
+                            .push(format!("Target {} evaded missile.", m.target_id));
+                    }
+                }
+                m.phase = MissilePhase::Detonated;
+            }
+        }
+        for id in &destroyed_ids {
+            if let Some(ac) = self.aircraft.iter_mut().find(|a| a.id == *id) {
+                ac.phase = FlightPhase::Destroyed;
+            }
+        }
+        self.missiles
+            .retain(|m| !matches!(m.phase, MissilePhase::Detonated | MissilePhase::Missed));
     }
 }
 
