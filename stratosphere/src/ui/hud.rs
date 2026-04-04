@@ -70,7 +70,10 @@ pub fn render_hud_panel(
                 canvas.set_draw_color(Color::RGBA(80, 80, 80, 255));
                 canvas.draw_line(
                     (panel.x + padding, row_y + line_h / 2),
-                    (panel.x + panel.width as i32 - padding, row_y + line_h / 2),
+                    (
+                        panel.x + panel.width.min(i32::MAX as u32) as i32 - padding,
+                        row_y + line_h / 2,
+                    ),
                 )?;
             }
             HudRow::Button { label, .. } => {
@@ -78,7 +81,7 @@ pub fn render_hud_panel(
                 canvas.fill_rect(Rect::new(
                     panel.x + padding,
                     row_y,
-                    panel.width - padding as u32 * 2,
+                    panel.width.saturating_sub(padding as u32 * 2),
                     (line_h - 2) as u32,
                 ))?;
                 render_text(
