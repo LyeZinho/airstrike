@@ -242,22 +242,13 @@ mod tests {
     use super::*;
 
     fn make_aircraft(id: u32, side: Side) -> Aircraft {
-        Aircraft {
-            id,
-            callsign: format!("T{}", id),
-            model: "F-16".to_string(),
-            side,
-            lat: 38.0,
-            lon: -9.0,
-            altitude_ft: 20_000.0,
-            heading_deg: 90.0,
-            speed_knots: 400.0,
-            fuel_kg: 3000.0,
-            fuel_burn_kg_per_s: 1.5,
-            rcs_base: 1.0,
-            is_detected: false,
-            detection_confidence: 0.0,
-        }
+        let mut ac = Aircraft::new(id, format!("T{}", id), "F-16", side);
+        ac.lat = 38.0;
+        ac.lon = -9.0;
+        ac.altitude_ft = 20_000.0;
+        ac.heading_deg = 90.0;
+        ac.speed_knots = 400.0;
+        ac
     }
 
     #[test]
