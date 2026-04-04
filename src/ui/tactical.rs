@@ -27,6 +27,11 @@ pub struct AircraftRenderState {
     pub trail: Vec<TrailPoint>,
     /// Seconds since last trail point was recorded.
     pub trail_timer: f32,
+    /// Ghost rendering: last known position when detected
+    pub last_known_lat: f64,
+    pub last_known_lon: f64,
+    /// Frames since detection was lost (0 = still detected or never seen)
+    pub frames_since_detection_lost: u32,
 }
 
 impl AircraftRenderState {
@@ -35,11 +40,22 @@ impl AircraftRenderState {
             id,
             trail: Vec::new(),
             trail_timer: 0.0,
+            last_known_lat: 0.0,
+            last_known_lon: 0.0,
+            frames_since_detection_lost: 0,
         }
     }
 
     /// Sample current position into trail every `interval` seconds.
     pub fn tick(&mut self, ac: &Aircraft, dt: f32, interval: f32) {
+        if ac.is_detected {
+            self.last_known_lat = ac.lat;
+            self.last_known_lon = ac.lon;
+            self.frames_since_detection_lost = 0;
+        } else if self.frames_since_detection_lost < 180 {
+            self.frames_since_detection_lost += 1;
+        }
+
         self.trail_timer += dt;
         if self.trail_timer >= interval {
             self.trail_timer = 0.0;
@@ -97,13 +113,39 @@ fn draw_tag<'tc>(
     color: Color,
 ) {
     let text = format!("{} {:05.0}ft", ac.callsign, ac.altitude_ft);
-    // TODO: cache tag textures to avoid per-frame allocation
     if let Ok(surface) = font.render(&text).blended(color) {
         if let Ok(texture) = texture_creator.create_texture_from_surface(&surface) {
             let sdl2::render::TextureQuery { width, height, .. } = texture.query();
             let dst = sdl2::rect::Rect::new(sx + 8, sy - 16, width, height);
             let _ = canvas.copy(&texture, None, Some(dst));
         }
+    }
+}
+
+pub fn draw_radar_sweep(
+    canvas: &mut Canvas<Window>,
+    radar_lat: f64,
+    radar_lon: f64,
+    radar_range_km: f32,
+    sweep_angle_deg: f32,
+    camera: &Camera,
+) {
+    let (wx, wy) = geo::lat_lon_to_world(radar_lat, radar_lon, camera.zoom);
+    let (rx, ry) = camera.world_to_screen(wx, wy);
+
+    let km_per_px = 156.543 / (1u32 << camera.zoom) as f32;
+    let radius_px = radar_range_km / km_per_px;
+
+    let arc_start = sweep_angle_deg - 15.0;
+    let arc_end = sweep_angle_deg + 15.0;
+
+    canvas.set_draw_color(Color::RGBA(0, 255, 100, 60));
+    for i in 0..=20 {
+        let angle = arc_start + (arc_end - arc_start) * i as f32 / 20.0;
+        let rad = angle.to_radians();
+        let x2 = (rx + radius_px * rad.sin()) as i32;
+        let y2 = (ry - radius_px * rad.cos()) as i32;
+        let _ = canvas.draw_line((rx as i32, ry as i32), (x2, y2));
     }
 }
 
@@ -118,14 +160,50 @@ pub fn draw_aircraft<'tc>(
 ) {
     let (win_w, win_h) = canvas.window().size();
 
+    for (ac, state) in aircraft.iter().zip(render_states.iter()) {
+        if ac.is_detected {
+            continue;
+        }
+        if state.frames_since_detection_lost == 0 {
+            continue;
+        }
+        if state.frames_since_detection_lost >= 180 {
+            continue;
+        }
+
+        let (wx, wy) =
+            geo::lat_lon_to_world(state.last_known_lat, state.last_known_lon, camera.zoom);
+        let (sx, sy) = camera.world_to_screen(wx, wy);
+        let sx = sx as i32;
+        let sy = sy as i32;
+
+        if sx < -CULLING_MARGIN
+            || sy < -CULLING_MARGIN
+            || sx > win_w as i32 + CULLING_MARGIN
+            || sy > win_h as i32 + CULLING_MARGIN
+        {
+            continue;
+        }
+
+        let fade = 1.0 - (state.frames_since_detection_lost as f32 / 180.0);
+        let alpha = (fade * 120.0) as u8;
+        let base_color = side_color(ac.side);
+        let ghost_color = Color::RGBA(base_color.r, base_color.g, base_color.b, alpha);
+
+        canvas.set_draw_color(ghost_color);
+        let _ = canvas.fill_rect(Rect::new(sx - 3, sy - 3, 6, 6));
+    }
+
     for ac in aircraft {
-        // World → screen
+        if !ac.is_detected {
+            continue;
+        }
+
         let (wx, wy) = geo::lat_lon_to_world(ac.lat, ac.lon, camera.zoom);
         let (sx, sy) = camera.world_to_screen(wx, wy);
         let sx = sx as i32;
         let sy = sy as i32;
 
-        // Off-screen culling (with margin for tags)
         if sx < -CULLING_MARGIN
             || sy < -CULLING_MARGIN
             || sx > win_w as i32 + CULLING_MARGIN
@@ -136,15 +214,12 @@ pub fn draw_aircraft<'tc>(
 
         let color = side_color(ac.side);
 
-        // Trail
         if let Some(state) = render_states.iter().find(|s| s.id == ac.id) {
             draw_trail(canvas, &state.trail, camera, color);
         }
 
-        // Symbol
         draw_symbol(canvas, sx, sy, color);
 
-        // Tag
         draw_tag(canvas, texture_creator, font, ac, sx, sy, color);
     }
 }
@@ -211,5 +286,52 @@ mod tests {
     fn test_side_color_hostile_is_red() {
         let c = side_color(Side::Hostile);
         assert!(c.r > c.b, "hostile should be red-ish");
+    }
+
+    #[test]
+    fn test_ghost_state_initialised_zero() {
+        let state = AircraftRenderState::new(1);
+        assert_eq!(state.frames_since_detection_lost, 0);
+        assert_eq!(state.last_known_lat, 0.0);
+        assert_eq!(state.last_known_lon, 0.0);
+    }
+
+    #[test]
+    fn test_ghost_increments_when_not_detected() {
+        let mut ac = make_aircraft(1, Side::Friendly);
+        ac.is_detected = false;
+        ac.lat = 40.0;
+        ac.lon = -8.0;
+        let mut state = AircraftRenderState::new(1);
+        state.tick(&ac, 0.016, 2.0);
+        assert_eq!(state.frames_since_detection_lost, 1);
+        state.tick(&ac, 0.016, 2.0);
+        assert_eq!(state.frames_since_detection_lost, 2);
+    }
+
+    #[test]
+    fn test_ghost_resets_when_detected() {
+        let mut ac = make_aircraft(1, Side::Friendly);
+        ac.is_detected = false;
+        let mut state = AircraftRenderState::new(1);
+        state.frames_since_detection_lost = 50;
+        ac.is_detected = true;
+        ac.lat = 42.0;
+        ac.lon = -7.5;
+        state.tick(&ac, 0.016, 2.0);
+        assert_eq!(state.frames_since_detection_lost, 0);
+        assert_eq!(state.last_known_lat, 42.0);
+        assert_eq!(state.last_known_lon, -7.5);
+    }
+
+    #[test]
+    fn test_ghost_does_not_exceed_180() {
+        let mut ac = make_aircraft(1, Side::Friendly);
+        ac.is_detected = false;
+        let mut state = AircraftRenderState::new(1);
+        for _ in 0..200 {
+            state.tick(&ac, 0.016, 2.0);
+        }
+        assert_eq!(state.frames_since_detection_lost, 180);
     }
 }

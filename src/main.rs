@@ -13,7 +13,7 @@ use sdl2::rect::Rect;
 use simulation::world::World;
 use ui::camera::Camera;
 use ui::grid::draw_grid;
-use ui::tactical::{draw_aircraft, AircraftRenderState};
+use ui::tactical::{draw_aircraft, draw_radar_sweep, AircraftRenderState};
 use ui::tile_manager::{visible_tiles, TileManager};
 
 const WINDOW_W: u32 = 1280;
@@ -103,6 +103,8 @@ fn main() -> Result<(), String> {
         .map(|ac| AircraftRenderState::new(ac.id))
         .collect();
 
+    let mut sweep_angle: f32 = 0.0;
+
     'running: loop {
         let frame_start = Instant::now();
 
@@ -189,6 +191,16 @@ fn main() -> Result<(), String> {
 
         // b) Coordinate grid
         draw_grid(&mut canvas, &camera);
+
+        sweep_angle = (sweep_angle + 3.0 * dt) % 360.0;
+        draw_radar_sweep(
+            &mut canvas,
+            DEFAULT_LAT,
+            DEFAULT_LON,
+            400.0,
+            sweep_angle,
+            &camera,
+        );
 
         // Tactical overlay: aircraft symbols, tags, trails
         draw_aircraft(
