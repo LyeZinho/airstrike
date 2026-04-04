@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.dependencies]
-sdl2        = { version = "0.37", features = ["image", "ttf"] }
+sdl2        = { version = "0.38", features = ["image", "ttf"] }
 glam        = "0.24"
 ureq        = "2"
 image       = { version = "0.25", default-features = false, features = ["png"] }
