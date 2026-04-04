@@ -366,6 +366,13 @@ fn main() -> Result<(), String> {
                     tracked_count,
                     &mut hud_cache,
                 )?;
+                ui::hud_panels::render_brevity_log(
+                    &mut canvas,
+                    texture_creator,
+                    &font,
+                    &world.brevity_log,
+                    WINDOW_H,
+                )?;
             }
         }
 
