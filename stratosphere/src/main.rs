@@ -289,7 +289,11 @@ fn main() -> Result<(), String> {
                 world.update(dt);
                 for state in &mut render_states {
                     if let Some(ac) = world.aircraft.iter().find(|a| a.id == state.id) {
-                        state.tick(ac, dt, TRAIL_INTERVAL_S);
+                        if ac.side == airstrike_engine::core::aircraft::Side::Friendly
+                            || ac.is_visible()
+                        {
+                            state.tick(ac, dt, TRAIL_INTERVAL_S);
+                        }
                     }
                 }
 

@@ -245,4 +245,44 @@ mod tests {
         let world = World::new_from_settings("PT", 75_000, &db);
         assert_eq!(world.credits, 75_000);
     }
+
+    #[test]
+    fn test_hostile_aircraft_not_visible_beyond_radar() {
+        let mut world = World::new();
+        let mut hostile = Aircraft::new(99, "BOGEY", "Su-27", Side::Hostile);
+        hostile.lat = 50.0;
+        hostile.lon = -9.142;
+        hostile.altitude_ft = 25_000.0;
+        world.aircraft.push(hostile);
+        world.update(1.0);
+        let h = world
+            .aircraft
+            .iter()
+            .find(|a| a.callsign == "BOGEY")
+            .unwrap();
+        assert!(
+            !h.is_visible(),
+            "hostile outside radar should not be visible"
+        );
+    }
+
+    #[test]
+    fn test_aircraft_visible_inside_radar_range() {
+        let mut world = World::new();
+        let mut ac = Aircraft::new(99, "NEARPLANE", "F-16C", Side::Friendly);
+        ac.lat = 38.8;
+        ac.lon = -9.2;
+        ac.altitude_ft = 25_000.0;
+        world.aircraft.push(ac);
+        world.update(1.0);
+        let found = world
+            .aircraft
+            .iter()
+            .find(|a| a.callsign == "NEARPLANE")
+            .unwrap();
+        assert!(
+            found.is_visible(),
+            "aircraft inside radar range should be visible"
+        );
+    }
 }
