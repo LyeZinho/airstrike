@@ -215,7 +215,11 @@ fn main() -> Result<(), String> {
                         keycode: Some(Keycode::Escape),
                         ..
                     } => {
-                        scene = Scene::ModeSelect(ModeSelect::new());
+                        if selection != Selection::None {
+                            selection = Selection::None;
+                        } else {
+                            scene = Scene::MainMenu(MainMenu::new());
+                        }
                     }
                     Event::KeyDown {
                         keycode: Some(Keycode::Down),
@@ -277,12 +281,20 @@ fn main() -> Result<(), String> {
                         mouse_down = true;
                         last_mouse = (x, y);
                         current_mouse = (x, y);
+                        drag_start = (x, y);
                     }
                     Event::MouseButtonUp {
                         mouse_btn: MouseButton::Left,
+                        x,
+                        y,
                         ..
                     } => {
                         mouse_down = false;
+                        let drag_dist =
+                            (((x - drag_start.0).pow(2) + (y - drag_start.1).pow(2)) as f32).sqrt();
+                        if drag_dist < 5.0 {
+                            selection = hit_test_map(x, y, &world, &camera);
+                        }
                     }
                     Event::MouseMotion { x, y, .. } => {
                         current_mouse = (x, y);
@@ -602,4 +614,46 @@ fn render_sandbox_settings(
         render_text_centered(canvas, font, tc, iso, color, 160 + list_i as i32 * 22, w)?;
     }
     Ok(())
+}
+
+fn hit_test_map(
+    sx: i32,
+    sy: i32,
+    world: &simulation::world::World,
+    camera: &airstrike_engine::ui::camera::Camera,
+) -> Selection {
+    use airstrike_engine::core::geo;
+
+    for ac in &world.aircraft {
+        if matches!(
+            ac.phase,
+            airstrike_engine::core::aircraft::FlightPhase::Destroyed
+        ) {
+            continue;
+        }
+        if ac.side == airstrike_engine::core::aircraft::Side::Hostile && !ac.is_visible() {
+            continue;
+        }
+        let (wx, wy) = geo::lat_lon_to_world(ac.lat, ac.lon, camera.zoom);
+        let (asx, asy) = camera.world_to_screen(wx, wy);
+        let dist = ((sx as f32 - asx).powi(2) + (sy as f32 - asy).powi(2)).sqrt();
+        if dist < 12.0 {
+            return Selection::Aircraft(ac.id);
+        }
+    }
+
+    for airport in &world.airports {
+        if !ui::airport_layer::should_render(airport, camera) {
+            continue;
+        }
+        let (wx, wy) = geo::lat_lon_to_world(airport.lat, airport.lon, camera.zoom);
+        let (asx, asy) = camera.world_to_screen(wx, wy);
+        let radius = (ui::airport_layer::dot_size(airport) + 6) as f32;
+        let dist = ((sx as f32 - asx).powi(2) + (sy as f32 - asy).powi(2)).sqrt();
+        if dist < radius {
+            return Selection::Airport(airport.icao.clone());
+        }
+    }
+
+    Selection::None
 }
