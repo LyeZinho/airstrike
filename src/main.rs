@@ -1,4 +1,5 @@
 mod core;
+mod simulation;
 mod ui;
 
 use std::time::{Duration, Instant};
