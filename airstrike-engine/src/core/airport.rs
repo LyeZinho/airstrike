@@ -21,6 +21,36 @@ pub struct AirportDb {
     pub airports: Vec<Airport>,
 }
 
+fn split_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                if in_quotes {
+                    if chars.peek() == Some(&'"') {
+                        chars.next();
+                        current.push('"');
+                    } else {
+                        in_quotes = false;
+                    }
+                } else {
+                    in_quotes = true;
+                }
+            }
+            ',' if !in_quotes => {
+                fields.push(current.trim().to_string());
+                current = String::new();
+            }
+            c => current.push(c),
+        }
+    }
+    fields.push(current.trim().to_string());
+    fields
+}
+
 impl AirportDb {
     pub fn load(csv_bytes: &[u8]) -> Self {
         let text = std::str::from_utf8(csv_bytes).unwrap_or("");
@@ -37,9 +67,9 @@ impl AirportDb {
 
         for line in text.lines() {
             if !header_done {
-                let cols: Vec<&str> = line.split(',').collect();
+                let cols = split_csv_line(line);
                 for (i, col) in cols.iter().enumerate() {
-                    match col.trim().trim_matches('"') {
+                    match col.as_str() {
                         "ident" => idx_ident = i,
                         "type" => idx_type = i,
                         "name" => idx_name = i,
@@ -53,14 +83,9 @@ impl AirportDb {
                 header_done = true;
                 continue;
             }
-            let fields: Vec<&str> = line.split(',').collect();
-            let get = |i: usize| {
-                fields
-                    .get(i)
-                    .map(|s| s.trim().trim_matches('"'))
-                    .unwrap_or("")
-            };
-            let airport_type = match get(idx_type) {
+            let fields = split_csv_line(line);
+            let get = |i: usize| -> String { fields.get(i).cloned().unwrap_or_default() };
+            let airport_type = match get(idx_type).as_str() {
                 "large_airport" => AirportType::Large,
                 "medium_airport" => AirportType::Medium,
                 "small_airport" => AirportType::Small,
@@ -70,11 +95,11 @@ impl AirportDb {
             let lon: f64 = get(idx_lon).parse().unwrap_or(0.0);
             let elevation_ft: f32 = get(idx_elev).parse().unwrap_or(0.0);
             airports.push(Airport {
-                icao: get(idx_ident).to_string(),
-                name: get(idx_name).to_string(),
+                icao: get(idx_ident),
+                name: get(idx_name),
                 lat,
                 lon,
-                country_iso: get(idx_country).to_string(),
+                country_iso: get(idx_country),
                 airport_type,
                 elevation_ft,
             });
@@ -185,5 +210,26 @@ XXXX,heliport,Some Heliport,38.0,-9.0,100,PT
         let lppt = db.by_icao("LPPT").unwrap();
         assert!((lppt.lat - 38.7813).abs() < 0.0001);
         assert!((lppt.lon - (-9.13592)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_quoted_name_with_comma_parsed_correctly() {
+        let csv = "ident,type,name,latitude_deg,longitude_deg,elevation_ft,iso_country\n\
+                   KXYZ,large_airport,\"Airport, Main\",38.0,-9.0,100,US\n";
+        let db = AirportDb::load(csv.as_bytes());
+        assert_eq!(db.airports.len(), 1);
+        assert_eq!(db.airports[0].name, "Airport, Main");
+    }
+
+    #[test]
+    fn test_real_ourairports_csv_parses_portugal() {
+        let csv = include_bytes!("../../../stratosphere/assets/airports.csv");
+        let db = AirportDb::load(csv);
+        let pt = db.for_country("PT");
+        assert!(!pt.is_empty(), "Portugal should have airports in real CSV");
+        assert!(
+            pt.iter().any(|a| a.icao == "LPPT"),
+            "LPPT (Lisbon) should be present"
+        );
     }
 }
