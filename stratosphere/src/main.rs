@@ -1,5 +1,6 @@
 mod scenes;
 mod simulation;
+mod ui;
 
 use scenes::main_menu::{MainMenu, MenuAction};
 use scenes::mode_select::{ModeSelect, ModeSelectAction};
@@ -295,6 +296,7 @@ fn main() -> Result<(), String> {
                 tile_manager.render_placeholders(&mut canvas, &camera);
                 tile_manager.render(&mut canvas, &camera);
                 draw_grid(&mut canvas, &camera);
+                ui::airport_layer::draw_airports(&mut canvas, &world.airports, &camera, true)?;
 
                 sweep_angle = (sweep_angle + 3.0 * dt) % 360.0;
                 draw_radar_sweep(

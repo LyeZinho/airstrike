@@ -1,9 +1,10 @@
 use airstrike_engine::core::aircraft::{Aircraft, FlightPhase, Side};
-use airstrike_engine::core::airport::{AirportDb, AirportType};
+use airstrike_engine::core::airport::{Airport, AirportDb, AirportType};
 use airstrike_engine::core::radar::RadarSystem;
 
 pub struct World {
     pub aircraft: Vec<Aircraft>,
+    pub airports: Vec<Airport>,
     pub radar: RadarSystem,
     pub credits: u32,
     pub game_time_s: f32,
@@ -14,6 +15,7 @@ impl World {
     pub fn new() -> Self {
         World {
             aircraft: Vec::new(),
+            airports: Vec::new(),
             radar: RadarSystem::new(38.716, -9.142, 50.0, 400.0),
             credits: 0,
             game_time_s: 0.0,
@@ -22,9 +24,10 @@ impl World {
     }
 
     pub fn new_from_settings(country_iso: &str, starting_credits: u32, db: &AirportDb) -> Self {
-        let airports: Vec<_> = db.for_country(country_iso).into_iter().cloned().collect();
+        let airports: Vec<Airport> = db.for_country(country_iso).into_iter().cloned().collect();
         let mut world = World {
             aircraft: Vec::new(),
+            airports: airports.clone(),
             radar: RadarSystem::new(38.716, -9.142, 50.0, 400.0),
             credits: starting_credits,
             game_time_s: 0.0,
