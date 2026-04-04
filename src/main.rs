@@ -28,17 +28,17 @@ const DEFAULT_LON: f64 = -9.142;
 const DEFAULT_ZOOM: u32 = 7;
 
 struct HudCache<'tc> {
-    last_lines: [String; 3],
+    last_lines: [String; 4],
     textures: Option<Vec<sdl2::render::Texture<'tc>>>,
-    sizes: [(u32, u32); 3],
+    sizes: [(u32, u32); 4],
 }
 
 impl<'tc> HudCache<'tc> {
     fn new() -> Self {
         HudCache {
-            last_lines: [String::new(), String::new(), String::new()],
+            last_lines: [String::new(), String::new(), String::new(), String::new()],
             textures: None,
-            sizes: [(0, 0); 3],
+            sizes: [(0, 0); 4],
         }
     }
 }
@@ -213,6 +213,7 @@ fn main() -> Result<(), String> {
         );
 
         // c) Debug HUD
+        let tracked_count = world.aircraft.iter().filter(|a| a.is_detected).count();
         render_hud(
             &mut canvas,
             texture_creator,
@@ -221,6 +222,8 @@ fn main() -> Result<(), String> {
             fps_display,
             tile_manager.loaded,
             tile_manager.pending,
+            "RWS",
+            tracked_count,
             &mut hud_cache,
         )?;
 
@@ -244,6 +247,8 @@ fn render_hud<'tc>(
     fps: u32,
     loaded: usize,
     pending: usize,
+    radar_mode: &str,
+    tracked_count: usize,
     cache: &mut HudCache<'tc>,
 ) -> Result<(), String> {
     let (lat, lon) = camera.center_lat_lon();
@@ -251,11 +256,12 @@ fn render_hud<'tc>(
         format!("ZOOM: {:2}   FPS: {}", camera.zoom, fps),
         format!("LAT: {:+.4}°  LON: {:+.4}°", lat, lon),
         format!("TILES: {} loaded / {} pending", loaded, pending),
+        format!("RADAR: {} | TRACKED: {}", radar_mode, tracked_count),
     ];
 
     if cache.textures.is_none() || new_lines != cache.last_lines {
-        let mut textures = Vec::with_capacity(3);
-        let mut sizes = [(0u32, 0u32); 3];
+        let mut textures = Vec::with_capacity(4);
+        let mut sizes = [(0u32, 0u32); 4];
         for (i, line) in new_lines.iter().enumerate() {
             let surface = font
                 .render(line)
@@ -278,7 +284,7 @@ fn render_hud<'tc>(
     let padding = 8i32;
 
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 180));
-    let bg = Rect::new(8, 8, 280, (3 * line_h + padding * 2) as u32);
+    let bg = Rect::new(8, 8, 280, (4 * line_h + padding * 2) as u32);
     canvas.fill_rect(bg)?;
 
     if let Some(textures) = &cache.textures {
