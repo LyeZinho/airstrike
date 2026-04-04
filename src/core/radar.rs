@@ -1,9 +1,13 @@
+const FEET_TO_METERS: f32 = 0.3048;
+const NOTCH_ASPECT_THRESHOLD: f32 = 0.15;
+
 /// A ground-based or airborne radar system
 pub struct RadarSystem {
     pub range_km: f32,
     pub position_lat: f64, // radar position in decimal degrees
     pub position_lon: f64,
-    pub altitude_m: f32,     // radar altitude in metres above sea level
+    pub altitude_m: f32, // radar altitude in metres above sea level
+    #[allow(dead_code)] // reserved for directional radar (Phase 4)
     pub scan_angle_deg: f32, // full scan cone width (360.0 = omni)
 }
 
@@ -31,24 +35,17 @@ impl RadarSystem {
         heading_deg: f32,
         bearing_from_target_to_radar_deg: f32,
     ) -> f32 {
-        let heading_rad = heading_deg.to_radians();
-        let bearing_rad = bearing_from_target_to_radar_deg.to_radians();
-
-        let heading_vec_x = heading_rad.sin();
-        let heading_vec_y = heading_rad.cos();
-
-        let bearing_vec_x = bearing_rad.sin();
-        let bearing_vec_y = bearing_rad.cos();
-
-        let aspect_dot = heading_vec_x * bearing_vec_x + heading_vec_y * bearing_vec_y;
-
-        let t = aspect_dot.abs();
+        let aspect = aspect_dot(heading_deg, bearing_from_target_to_radar_deg);
+        let t = aspect.abs();
         rcs_lateral + t * (rcs_frontal - rcs_lateral)
     }
 
     /// Radar horizon formula: D_max ≈ 4.12 * (sqrt(h_radar_m) + sqrt(h_target_m))  [km]
     pub fn horizon_range_km(radar_alt_m: f32, target_alt_m: f32) -> f32 {
-        4.12 * (radar_alt_m.sqrt() + target_alt_m.sqrt())
+        let radar_alt_clamped = radar_alt_m.max(0.0);
+        let target_alt_clamped = target_alt_m.max(0.0);
+        // 4.12 is an empirical constant for Earth's curvature and k-factor (km / sqrt(m))
+        4.12 * (radar_alt_clamped.sqrt() + target_alt_clamped.sqrt())
     }
 
     /// Full detection check.
@@ -94,21 +91,14 @@ impl RadarSystem {
             return false;
         }
 
-        let target_altitude_m = target_altitude_ft * 0.3048;
+        let target_altitude_m = target_altitude_ft * FEET_TO_METERS;
         let horizon_km = Self::horizon_range_km(self.altitude_m, target_altitude_m);
         if distance_km > horizon_km {
             return false;
         }
 
-        let heading_rad = target_heading_deg.to_radians();
-        let bearing_rad = bearing_from_target_to_radar.to_radians();
-        let heading_vec_x = heading_rad.sin();
-        let heading_vec_y = heading_rad.cos();
-        let bearing_vec_x = bearing_rad.sin();
-        let bearing_vec_y = bearing_rad.cos();
-        let aspect_dot = heading_vec_x * bearing_vec_x + heading_vec_y * bearing_vec_y;
-
-        let is_notched = aspect_dot.abs() < 0.15 && target_altitude_ft < 1000.0;
+        let aspect = aspect_dot(target_heading_deg, bearing_from_target_to_radar);
+        let is_notched = aspect.abs() < NOTCH_ASPECT_THRESHOLD && target_altitude_ft < 1000.0;
         if is_notched {
             return false;
         }
@@ -128,6 +118,19 @@ pub fn rcs_for_model(model: &str) -> (f32, f32) {
         "C-130" => (80.0, 120.0),
         _ => (5.0, 10.0),
     }
+}
+
+fn aspect_dot(heading_deg: f32, bearing_from_target_to_radar_deg: f32) -> f32 {
+    let heading_rad = heading_deg.to_radians();
+    let bearing_rad = bearing_from_target_to_radar_deg.to_radians();
+
+    let heading_vec_x = heading_rad.sin();
+    let heading_vec_y = heading_rad.cos();
+
+    let bearing_vec_x = bearing_rad.sin();
+    let bearing_vec_y = bearing_rad.cos();
+
+    heading_vec_x * bearing_vec_x + heading_vec_y * bearing_vec_y
 }
 
 /// Use the haversine formula for distance between two lat/lon points
