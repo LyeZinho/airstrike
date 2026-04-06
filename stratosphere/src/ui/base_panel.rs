@@ -11,7 +11,7 @@ pub fn render_base_panel<'tc>(
     font: &sdl2::ttf::Font,
     base: &Airbase,
 ) -> Result<(), String> {
-    let (win_w, win_h) = canvas.window().size();
+    let (_win_w, win_h) = canvas.window().size();
     let p_w = 300;
     let p_h = 450;
     let p_x = 20;
@@ -60,7 +60,7 @@ pub fn render_base_panel<'tc>(
     render_text(canvas, texture_creator, font, "RESOURCES", p_x + 20, y_offset, Color::RGB(200, 200, 200))?;
     y_offset += 30;
 
-    let fuel_pct = base.fuel_kg / base.max_fuel_kg;
+    let _fuel_pct = base.fuel_kg / base.max_fuel_kg;
     render_text(canvas, texture_creator, font, "Fuel", p_x + 30, y_offset, Color::RGB(220, 220, 220))?;
     render_text(canvas, texture_creator, font, &format!("{:.0} kg", base.fuel_kg), p_x + 160, y_offset, Color::RGB(150, 255, 150))?;
     y_offset += 25;

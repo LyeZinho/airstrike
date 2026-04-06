@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 airstrike-engine = { path = "../airstrike-engine" }
+rayon            = { workspace = true }
 sdl2             = { workspace = true }
 glam             = { workspace = true }
 ureq             = { workspace = true }

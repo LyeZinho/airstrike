@@ -1,8 +1,9 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SeekerType {
     ActiveRadar,
     SemiActive,
     Ir,
+    PassiveRadar, // For SEAD (Anti-radiation)
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,16 @@ pub static WEAPON_CATALOG: &[WeaponSpec] = &[
         speed_knots: 2800.0,
         pk_base: 0.87,
         seeker: SeekerType::ActiveRadar,
+    },
+    WeaponSpec {
+        id: "AGM-88",
+        display_name: "AGM-88 HARM",
+        range_km: 150.0,
+        nez_km: 40.0,
+        pitbull_range_km: 5.0,
+        speed_knots: 2280.0,
+        pk_base: 0.70,
+        seeker: SeekerType::PassiveRadar,
     },
 ];
 

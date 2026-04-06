@@ -55,7 +55,14 @@ pub struct Aircraft {
     pub fuel_kg: f32,
     pub fuel_burn_kg_per_s: f32,
 
-    pub rcs_base: f32,
+    pub rcs_frontal: f32,
+    pub rcs_side: f32,
+    pub is_stealth: bool,
+
+    pub flare_count: u32,
+    pub chaff_count: u32,
+    pub jamming_active: bool,
+    pub jamming_strength: f32,
 
     pub is_detected: bool,
     pub detection_confidence: f32,
@@ -88,7 +95,13 @@ impl Aircraft {
             speed_knots: 400.0,
             fuel_kg: 3_000.0,
             fuel_burn_kg_per_s: 0.1,
-            rcs_base: 1.0,
+            rcs_frontal: 1.0,
+            rcs_side: 3.0,
+            is_stealth: false,
+            flare_count: 60,
+            chaff_count: 30,
+            jamming_active: false,
+            jamming_strength: 0.0,
             is_detected: false,
             detection_confidence: 0.0,
             phase: FlightPhase::ColdDark,
@@ -113,6 +126,9 @@ impl Aircraft {
         self.speed_knots = spec.cruise_speed_knots;
         self.fuel_kg = spec.fuel_capacity_kg;
         self.fuel_burn_kg_per_s = spec.fuel_burn_kg_per_s;
+        self.rcs_frontal = spec.rcs_frontal;
+        self.rcs_side = spec.rcs_side;
+        self.is_stealth = spec.is_stealth;
         if let Some(ref mut radar) = self.own_radar {
             radar.range_km = spec.radar_range_km;
             radar.arc_deg = spec.radar_fov_deg;
@@ -126,7 +142,7 @@ impl Aircraft {
     pub fn update(&mut self, dt: f32) {
         if matches!(
             self.phase,
-            FlightPhase::ColdDark | FlightPhase::Maintenance { .. } | FlightPhase::Destroyed
+            FlightPhase::ColdDark | FlightPhase::Preflight { .. } | FlightPhase::Taxiing { .. } | FlightPhase::Maintenance { .. } | FlightPhase::Destroyed
         ) {
             self.advance_phase(dt);
             return;
@@ -209,6 +225,9 @@ impl Aircraft {
                     };
                 }
             }
+            FlightPhase::Taxiing { .. } => {
+                self.phase = FlightPhase::TakeoffRoll { speed_knots: 0.0 };
+            }
             FlightPhase::Maintenance {
                 elapsed_s,
                 required_s,
@@ -220,6 +239,7 @@ impl Aircraft {
             }
             FlightPhase::TakeoffRoll { speed_knots } => {
                 *speed_knots += 35.0 * dt; // Increased acceleration (was 10.0)
+                self.speed_knots = *speed_knots;
                 if *speed_knots >= 160.0 {
                     let target = self
                         .mission
@@ -234,6 +254,16 @@ impl Aircraft {
             }
             FlightPhase::Climbing { target_alt_ft } => {
                 self.altitude_ft += 3500.0 * dt; // Faster climb (was 2000.0)
+                // Accelerate towards waypoint speed
+                if let Some(m) = &self.mission {
+                    if let Some(wp) = m.waypoints.get(self.waypoint_index) {
+                        if self.speed_knots < wp.speed_knots {
+                            self.speed_knots = (self.speed_knots + 25.0 * dt).min(wp.speed_knots);
+                        } else if self.speed_knots > wp.speed_knots {
+                            self.speed_knots = (self.speed_knots - 25.0 * dt).max(wp.speed_knots);
+                        }
+                    }
+                }
                 let target = *target_alt_ft;
                 if self.altitude_ft >= target {
                     self.altitude_ft = target;
@@ -243,11 +273,32 @@ impl Aircraft {
             FlightPhase::EnRoute => {
                 if let Some(m) = &self.mission {
                     if let Some(wp) = m.waypoints.get(self.waypoint_index) {
+                        // Accelerate/decelerate towards waypoint speed
+                        if self.speed_knots < wp.speed_knots {
+                            self.speed_knots = (self.speed_knots + 25.0 * dt).min(wp.speed_knots);
+                        } else if self.speed_knots > wp.speed_knots {
+                            self.speed_knots = (self.speed_knots - 25.0 * dt).max(wp.speed_knots);
+                        }
                         let dist = haversine_km(self.lat, self.lon, wp.lat, wp.lon);
-                        if dist < 1.0 { // 1km arrival radius
+                        if dist < 5.0 { // 5km arrival radius softens turns
                             self.waypoint_index += 1;
                             if self.waypoint_index >= m.waypoints.len() {
-                                self.phase = FlightPhase::Rtb;
+                                use crate::core::mission::WaypointAction;
+                                match wp.action {
+                                    WaypointAction::Rtb => {
+                                        self.phase = FlightPhase::Rtb;
+                                    }
+                                    WaypointAction::OrbitCap { radius_km, .. } => {
+                                        self.phase = FlightPhase::FormationHold {
+                                            orbit_lat: wp.lat,
+                                            orbit_lon: wp.lon,
+                                            orbit_radius_km: radius_km,
+                                        };
+                                    }
+                                    _ => {
+                                        self.phase = FlightPhase::Rtb;
+                                    }
+                                }
                             }
                         }
                     }

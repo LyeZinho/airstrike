@@ -491,6 +491,10 @@ fn main() -> Result<(), String> {
                 render_sandbox_settings(&mut canvas, &font, texture_creator, ss)?;
             }
             Scene::InGame => {
+                let (cam_lat, cam_lon) = camera.center_lat_lon();
+                world.theater_lat = cam_lat;
+                world.theater_lon = cam_lon;
+                
                 world.update(dt);
                 // Optimize: Build a quick lookup map for render states
                 use std::collections::HashMap;
@@ -535,6 +539,12 @@ fn main() -> Result<(), String> {
                     }
                     
                     if !should_render { continue; }
+
+                    // LOD Culling: Don't draw tiny distant radar circles if there are hundreds
+                    let dist_to_radar = airstrike_engine::core::radar::haversine_km(cam_lat, cam_lon, radar.position_lat, radar.position_lon);
+                    if dist_to_radar > 1000.0 && !is_friendly {
+                        continue; // Hide distant enemy radars to declutter
+                    }
 
                     let (wx, wy) = airstrike_engine::core::geo::lat_lon_to_world(radar.position_lat, radar.position_lon, camera.zoom);
                     let (rx, ry) = camera.world_to_screen(wx, wy);
@@ -627,11 +637,14 @@ fn main() -> Result<(), String> {
                     WINDOW_H,
                 )?;
 
+                let mut show_standard_hud = true;
+
                 if let Selection::Aircraft(id) = &selection {
                     if let Some(idx) = world.aircraft.iter().position(|a| &a.id == id) {
                         let ac = &world.aircraft[idx];
                         let rs = &render_states[idx];
                         if ac.phase == FlightPhase::ColdDark && ac.side == Side::Friendly {
+                            show_standard_hud = false;
                             render_mission_briefing(
                                 &mut canvas,
                                 texture_creator,
@@ -642,21 +655,37 @@ fn main() -> Result<(), String> {
                                 &world,
                             )?;
                         } else {
-                            let panel = build_aircraft_panel(ac);
-                            ui::hud::render_hud_panel(&mut canvas, texture_creator, &font, &panel)?;
+                            // NEW: Aircraft Detail Panel for more specs
+                            let detail_panel = ui::aircraft_detail_panel::create_aircraft_detail_panel(ac);
+                            ui::hud::render_hud_panel(&mut canvas, texture_creator, &font, &detail_panel)?;
+                        }
+
+                        // NEW: EW Panel for friendly aircraft or if selected and visible
+                        if ac.side == Side::Friendly && show_standard_hud {
+                             let context_radars: Vec<(u32, f64, f64, bool)> = world.radars.iter().map(|r| (r.id, r.position_lat, r.position_lon, r.is_emitting)).collect();
+                             let ew_panel = ui::ew_panel::create_ew_panel(ac, &world.ew, &context_radars);
+                             ui::hud::render_hud_panel(&mut canvas, texture_creator, &font, &ew_panel)?;
                         }
                     }
                 }
+
                 if let Selection::Airport(icao) = &selection {
                     if let Some(airport) = world.airports.iter().find(|a| &a.icao == icao) {
                         // Priority: If it's a managed airbase, show the airbase panel
                         if let Some(base) = world.airbases.iter().find(|b| &b.icao == icao) {
+                            show_standard_hud = false;
                             render_base_panel(&mut canvas, texture_creator, &font, base)?;
                         } else {
                             let panel = build_airport_panel(airport, &world.aircraft);
                             ui::hud::render_hud_panel(&mut canvas, texture_creator, &font, &panel)?;
                         }
                     }
+                }
+
+                // NEW: Global Diplomacy Panel - Only show if not in a "major" modal
+                if show_standard_hud {
+                    let diplomacy_panel = ui::diplomacy_panel::create_diplomacy_panel(&mut world.diplomacy);
+                    ui::hud::render_hud_panel(&mut canvas, texture_creator, &font, &diplomacy_panel)?;
                 }
             }
         }
@@ -990,8 +1019,9 @@ fn build_aircraft_panel(ac: &airstrike_engine::core::aircraft::Aircraft) -> ui::
     rows.push(HudRow::KeyValue("Fuel".into(), format!("{:.0}%", fuel_pct)));
 
     HudPanel {
-        x: WINDOW_W as i32 - 230,
-        y: 10,
+        anchor: ui::hud::HudAnchor::TopRight,
+        offset_x: 10,
+        offset_y: 10,
         width: 220,
         title: ac.callsign.clone(),
         rows,
@@ -1042,8 +1072,9 @@ fn build_airport_panel(
     }
 
     HudPanel {
-        x: WINDOW_W as i32 - 230,
-        y: 10,
+        anchor: ui::hud::HudAnchor::TopRight,
+        offset_x: 10,
+        offset_y: 10,
         width: 220,
         title: format!("{} — {}", airport.icao, airport.name),
         rows,
@@ -1053,9 +1084,16 @@ fn build_airport_panel(
 fn hit_test_panel_dispatch(panel: &ui::hud::HudPanel, mx: i32, my: i32) -> Option<u32> {
     use ui::hud::{HudAction, HudRow};
 
+    let (win_w, win_h) = (1280, 720); // TODO: get from world or context
     let line_h = 18i32;
     let padding = 6i32;
     let title_h = 20i32;
+    let (px, py) = match panel.anchor {
+        ui::hud::HudAnchor::TopLeft => (panel.offset_x, panel.offset_y),
+        ui::hud::HudAnchor::TopRight => (win_w as i32 - panel.width as i32 - panel.offset_x, panel.offset_y),
+        ui::hud::HudAnchor::BottomLeft => (panel.offset_x, win_h as i32 - 300 - panel.offset_y), // estimate h
+        ui::hud::HudAnchor::BottomRight => (win_w as i32 - panel.width as i32 - panel.offset_x, win_h as i32 - 300 - panel.offset_y),
+    };
 
     for (i, row) in panel.rows.iter().enumerate() {
         if let HudRow::Button {
@@ -1063,9 +1101,9 @@ fn hit_test_panel_dispatch(panel: &ui::hud::HudPanel, mx: i32, my: i32) -> Optio
             ..
         } = row
         {
-            let row_y = panel.y + title_h + padding + i as i32 * line_h;
+            let row_y = py + title_h + padding + i as i32 * line_h;
             let btn_rect = sdl2::rect::Rect::new(
-                panel.x + padding,
+                px + padding,
                 row_y,
                 panel.width.saturating_sub(padding as u32 * 2),
                 (line_h - 2) as u32,

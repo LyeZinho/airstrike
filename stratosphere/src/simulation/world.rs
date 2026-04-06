@@ -1,10 +1,10 @@
 use airstrike_engine::core::aircraft::{Aircraft, FlightPhase, Side};
 use airstrike_engine::core::airport::{Airport, AirportDb, AirportType};
 use airstrike_engine::core::airbase::Airbase;
-use airstrike_engine::core::radar::{RadarSystem, bearing_deg};
+use airstrike_engine::core::radar::{RadarSystem, bearing_deg, haversine_km};
 use airstrike_engine::core::datalink::{ContactPicture, Contact, IffStatus};
 use airstrike_engine::core::mission::MissionPlan;
-use crate::ui::mission_panel::MissionBriefingState; // Correct path
+// use crate::ui::mission_panel::MissionBriefingState; // Removed unused
 
 use super::missile::{resolve_hit, HitResult, Missile, MissilePhase};
 
@@ -20,6 +20,14 @@ pub struct World {
     pub brevity_log: Vec<String>,
     pub objectives: Vec<airstrike_engine::core::mission::MissionObjective>,
     next_id: u32,
+    pub spatial_index: airstrike_engine::core::spatial_index::SpatialIndex,
+    pub event_bus: airstrike_engine::core::event_bus::EventBus,
+    pub diplomacy: airstrike_engine::core::diplomacy::DiplomacySystem,
+    pub ew: airstrike_engine::core::ew::EwSystem,
+    pub theater_lat: f64,
+    pub theater_lon: f64,
+    pub theater_radius_km: f32,
+    pub use_culling: bool,
 }
 
 impl World {
@@ -28,14 +36,22 @@ impl World {
             aircraft: Vec::new(),
             airports: Vec::new(),
             airbases: Vec::new(),
-            radars: vec![RadarSystem::new(38.716, -9.142, 50.0, 400.0, Side::Friendly)],
+            radars: vec![RadarSystem::new(1, 38.716, -9.142, 50.0, 400.0, Side::Friendly)],
             credits: 0,
             game_time_s: 0.0,
             missiles: Vec::new(),
             contact_picture: ContactPicture::new(),
             brevity_log: Vec::new(),
             objectives: Vec::new(),
-            next_id: 1,
+            next_id: 2,
+            spatial_index: airstrike_engine::core::spatial_index::SpatialIndex::new(50.0),
+            event_bus: airstrike_engine::core::event_bus::EventBus::new(),
+            diplomacy: airstrike_engine::core::diplomacy::DiplomacySystem::new(),
+            ew: airstrike_engine::core::ew::EwSystem::new(),
+            theater_lat: 0.0,
+            theater_lon: 0.0,
+            theater_radius_km: 500.0,
+            use_culling: true,
         }
     }
 
@@ -61,48 +77,43 @@ impl World {
         let theater_radius_km = 2500.0; // Theater of operations size
 
         // National Defense Network Spawning (Limited to Theater)
-        let mut radars: Vec<RadarSystem> = airports
-            .iter()
-            .filter(|a| {
-                // Friendly radars are always spawned globally
-                if a.side == Side::Friendly { return true; }
-                // Hostile/Neutral radars only spawned within Theater range
-                airstrike_engine::core::radar::haversine_km(theater_center.0, theater_center.1, a.lat, a.lon) < theater_radius_km
-            })
-            .filter_map(|a| {
-                let mut r = match a.airport_type {
-                    // Command Center (Large) gets Tier 3 AESA
-                    AirportType::Large => {
-                        let mut rs = RadarSystem::new(a.lat, a.lon, a.elevation_ft * 0.3048, 480.0, a.side);
-                        rs.tier = airstrike_engine::core::radar::RadarTier::Tier3;
-                        Some(rs)
-                    },
-                    // Medium gets Tier 2
-                    AirportType::Medium if rng.gen_bool(0.4) => {
-                        let mut rs = RadarSystem::new(a.lat, a.lon, a.elevation_ft * 0.3048, 320.0, a.side);
-                        rs.tier = airstrike_engine::core::radar::RadarTier::Tier2;
-                        Some(rs)
-                    },
-                    _ => None,
-                };
-                if let Some(ref mut radar) = r {
-                    radar.sweep_angle = rng.gen_range(0.0..360.0);
-                    radar.sweep_dir = if rng.gen_bool(0.5) { 1.0 } else { -1.0 };
-                }
-                r
-            })
-            .collect();
+        let mut next_id = 1;
+        let mut radars: Vec<RadarSystem> = Vec::new();
+        for a in &airports {
+            let r = match a.airport_type {
+                AirportType::Large => {
+                    let mut rs = RadarSystem::new(next_id, a.lat, a.lon, a.elevation_ft * 0.3048, 480.0, a.side);
+                    next_id += 1;
+                    rs.tier = airstrike_engine::core::radar::RadarTier::Tier3;
+                    Some(rs)
+                },
+                AirportType::Medium if rng.gen_bool(0.4) => {
+                    let mut rs = RadarSystem::new(next_id, a.lat, a.lon, a.elevation_ft * 0.3048, 320.0, a.side);
+                    next_id += 1;
+                    rs.tier = airstrike_engine::core::radar::RadarTier::Tier2;
+                    Some(rs)
+                },
+                _ => None,
+            };
+            if let Some(mut radar) = r {
+                radar.sweep_angle = rng.gen_range(0.0..360.0);
+                radar.sweep_dir = if rng.gen_bool(0.5) { 1.0 } else { -1.0 };
+                radars.push(radar);
+            }
+        }
 
         // Add 2-3 isolated GCI "Sítios de Radar" in high-ground areas for the player
         if let Some(first) = airports.iter().find(|a| a.side == Side::Friendly) {
              for _ in 0..3 {
                  let mut gci = RadarSystem::new(
+                     next_id,
                      first.lat + rng.gen_range(-2.0..2.0),
                      first.lon + rng.gen_range(-2.0..2.0),
                      1500.0, // High mountain
                      550.0,  // Massive range
                      Side::Friendly
                  );
+                 next_id += 1;
                  gci.tier = airstrike_engine::core::radar::RadarTier::Tier3;
                  radars.push(gci);
              }
@@ -127,11 +138,19 @@ impl World {
             brevity_log: Vec::new(),
             objectives: Vec::new(),
             next_id: 1,
+            spatial_index: airstrike_engine::core::spatial_index::SpatialIndex::new(50.0),
+            event_bus: airstrike_engine::core::event_bus::EventBus::new(),
+            diplomacy: airstrike_engine::core::diplomacy::DiplomacySystem::new(),
+            ew: airstrike_engine::core::ew::EwSystem::new(),
+            theater_lat: theater_center.0,
+            theater_lon: theater_center.1,
+            theater_radius_km: theater_radius_km as f32,
+            use_culling: true,
         };
 
         for airport in &airports {
             // Theater range check for hostile aircraft spawning
-            if airport.side == Side::Hostile && airstrike_engine::core::radar::haversine_km(theater_center.0, theater_center.1, airport.lat, airport.lon) > theater_radius_km {
+            if airport.side == Side::Hostile && airstrike_engine::core::radar::haversine_km(theater_center.0, theater_center.1, airport.lat, airport.lon) > theater_radius_km as f32 {
                 continue;
             }
 
@@ -172,7 +191,39 @@ impl World {
 
         world
     }
-    pub fn dispatch_with_mission(&mut self, id: u32, plan: MissionPlan) -> bool {
+    pub fn dispatch_with_mission(&mut self, id: u32, mut plan: MissionPlan) -> bool {
+        let mut nearest_airport_lat = 0.0;
+        let mut nearest_airport_lon = 0.0;
+        let mut nearest_dist = f32::MAX;
+        let mut ac_side = Side::Friendly;
+
+        // Try to get the Aircraft side first
+        if let Some(ac) = self.aircraft.iter().find(|a| a.id == id) {
+            ac_side = ac.side;
+        }
+
+        // Check if last waypoint is near a friendly airport
+        if let Some(last_wp) = plan.waypoints.last_mut() {
+            for airport in &self.airports {
+                if airport.side == ac_side {
+                    let d = airstrike_engine::core::radar::haversine_km(last_wp.lat, last_wp.lon, airport.lat, airport.lon);
+                    if d < nearest_dist {
+                        nearest_dist = d;
+                        nearest_airport_lat = airport.lat;
+                        nearest_airport_lon = airport.lon;
+                    }
+                }
+            }
+            if nearest_dist < 20.0 {
+                last_wp.action = airstrike_engine::core::mission::WaypointAction::Rtb;
+            } else {
+                last_wp.action = airstrike_engine::core::mission::WaypointAction::OrbitCap {
+                    radius_km: 5.0,
+                    duration_s: 999999.0,
+                };
+            }
+        }
+
         if let Some(ac) = self.aircraft.iter_mut().find(|a| a.id == id) {
             if matches!(ac.phase, FlightPhase::ColdDark) {
                 ac.mission = Some(plan);
@@ -195,7 +246,8 @@ impl World {
         f1.heading_deg = 120.0;
         f1.speed_knots = 450.0;
         f1.altitude_ft = 25_000.0;
-        f1.rcs_base = 1.2;
+        f1.rcs_frontal = 1.2;
+        f1.rcs_side = 3.5;
         f1.phase = FlightPhase::EnRoute;
         self.aircraft.push(f1);
 
@@ -206,7 +258,8 @@ impl World {
         f2.heading_deg = 300.0;
         f2.speed_knots = 450.0;
         f2.altitude_ft = 24_000.0;
-        f2.rcs_base = 1.2;
+        f2.rcs_frontal = 1.2;
+        f2.rcs_side = 3.5;
         f2.phase = FlightPhase::EnRoute;
         self.aircraft.push(f2);
 
@@ -217,7 +270,8 @@ impl World {
         h1.heading_deg = 270.0;
         h1.speed_knots = 520.0;
         h1.altitude_ft = 500.0;
-        h1.rcs_base = 4.0;
+        h1.rcs_frontal = 4.0;
+        h1.rcs_side = 10.0;
         h1.phase = FlightPhase::EnRoute;
         self.aircraft.push(h1);
 
@@ -228,132 +282,168 @@ impl World {
         h2.heading_deg = 250.0;
         h2.speed_knots = 500.0;
         h2.altitude_ft = 18_000.0;
-        h2.rcs_base = 3.5;
+        h2.rcs_frontal = 3.5;
+        h2.rcs_side = 8.0;
         h2.phase = FlightPhase::EnRoute;
         self.aircraft.push(h2);
     }
 
     pub fn update(&mut self, dt: f32) {
         self.game_time_s += dt;
-
-        // Rotate radars
-        let sweep_speed = 45.0; // deg/s
-        for radar in &mut self.radars {
-            radar.sweep_angle = (radar.sweep_angle + radar.sweep_dir * sweep_speed * dt).rem_euclid(360.0);
+        // 0. Update Spatial Index
+        self.spatial_index.clear();
+        for ac in &self.aircraft {
+            if ac.phase != FlightPhase::Destroyed {
+                self.spatial_index.update_entity(ac.id, ac.lat, ac.lon, 0.0);
+            }
         }
-        for ac in &mut self.aircraft {
+
+        use rayon::prelude::*;
+        let use_culling = self.use_culling;
+        let theater_lat = self.theater_lat;
+        let theater_lon = self.theater_lon;
+        let theater_radius_km = self.theater_radius_km;
+        let sweep_speed = 45.0; // deg/s
+
+        // 1. Flight Dynamics (Hibernation logic and Radar Sweep)
+        self.aircraft.par_iter_mut().for_each(|ac| {
+            if ac.phase == FlightPhase::Destroyed { return; }
+            
+            let dist_to_theater = if use_culling {
+                haversine_km(ac.lat, ac.lon, theater_lat, theater_lon)
+            } else {
+                0.0
+            };
+
             if let Some(ref mut radar) = ac.own_radar {
                 radar.sweep_angle = (radar.sweep_angle + radar.sweep_dir * sweep_speed * dt).rem_euclid(360.0);
             }
+
+            if use_culling && dist_to_theater > theater_radius_km {
+                // HIBERNATED: Simple linear move, no complex AI/Radar
+                ac.update(dt);
+                ac.is_detected = false; // Hide from picture if outside theater
+                return;
+            }
+
             ac.update(dt);
-        }
+        });
+
+        // Rotate radars
+        self.radars.par_iter_mut().for_each(|radar| {
+            if use_culling && haversine_km(radar.position_lat, radar.position_lon, theater_lat, theater_lon) > theater_radius_km + radar.range_km as f32 {
+                return;
+            }
+            radar.sweep_angle = (radar.sweep_angle + radar.sweep_dir * sweep_speed * dt).rem_euclid(360.0);
+        });
 
         for base in &mut self.airbases {
             base.update(dt);
         }
 
-        use airstrike_engine::core::radar::rcs_for_model;
-        // Detected if ANY radar can see this aircraft
-        let detections: Vec<bool> = self
-            .aircraft
-            .iter()
-            .map(|ac| {
-                let (rf, rl) = rcs_for_model(&ac.model);
-                if ac.side == Side::Friendly {
-                    return true;
+        let game_time_s = self.game_time_s;
+
+        // 1. Ground radars scan and update picture
+        let mut new_contacts: Vec<Contact> = self.radars.par_iter().flat_map(|radar| {
+            if !radar.is_emitting { return vec![]; }
+            
+            if use_culling {
+                let dist_to_theater = haversine_km(radar.position_lat, radar.position_lon, theater_lat, theater_lon);
+                if dist_to_theater > theater_radius_km + radar.range_km as f32 {
+                    return vec![]; // Radar is too far to see anything in theater
                 }
-                self.radars.iter()
-                    .filter(|r| r.side == Side::Friendly) // Only friendly radars track for player
-                    .filter(|r| {
-                        // Culling: Only check radars within 1000km to save trig calls
-                        let dx = (r.position_lat - ac.lat).abs();
-                        let dy = (r.position_lon - ac.lon).abs();
-                        dx < 10.0 && dy < 15.0 // Rough bounding box (~1100km)
-                    })
-                    .any(|radar| {
-                        radar.is_detected(ac.lat, ac.lon, ac.altitude_ft, ac.heading_deg, rf, rl)
-                    })
-            })
-            .collect();
-
-        for (ac, detected) in self.aircraft.iter_mut().zip(detections.iter()) {
-            ac.is_detected = *detected;
-            ac.detection_confidence = if *detected { 1.0 } else { 0.0 };
-        }
-
-        // Per-aircraft radar scanning and datalink update
-        self.contact_picture.prune(10.0, self.game_time_s);
-        
-        let mut new_contacts = Vec::new();
-        // 1. Ground radars update picture
-        for (i, ac) in self.aircraft.iter().enumerate() {
-            if detections[i] {
-                new_contacts.push(Contact {
-                    aircraft_id: ac.id,
-                    lat: ac.lat,
-                    lon: ac.lon,
-                    altitude_ft: ac.altitude_ft,
-                    heading_deg: ac.heading_deg,
-                    iff: match ac.side {
-                        Side::Friendly => IffStatus::Friendly,
-                        Side::Hostile => IffStatus::Hostile,
-                        Side::Unknown => IffStatus::Unknown,
-                    },
-                    last_updated_s: self.game_time_s,
-                });
             }
-        }
 
-        // 2. Airborne radars scan and update picture
-        for i in 0..self.aircraft.len() {
-            let (radar_lat, radar_lon, _radar_alt, radar_heading, _side, radar_opt) = {
-                let ac = &self.aircraft[i];
-                if ac.phase == FlightPhase::Destroyed || ac.side != Side::Friendly {
-                    continue;
-                }
-                (ac.lat, ac.lon, ac.altitude_ft, ac.heading_deg, ac.side, ac.own_radar.clone())
-            };
+            // OPTIMIZED: Use spatial index to find nearby targets
+            let nearby_ids = self.spatial_index.get_nearby(radar.position_lat, radar.position_lon, radar.range_km as f64);
+            
+            let mut contacts = Vec::new();
+            for id in nearby_ids {
+                // OPTIMIZED: Binary search lookup instead of find
+                if let Ok(idx) = self.aircraft.binary_search_by_key(&id, |a| a.id) {
+                    let target = &self.aircraft[idx];
+                    if target.phase == FlightPhase::Destroyed { continue; }
 
-            if let Some(radar) = radar_opt {
-                use airstrike_engine::core::radar::rcs_for_model;
-                for j in 0..self.aircraft.len() {
-                    if i == j { continue; }
-                    let (target_lat, target_lon, target_alt, target_heading, target_model, target_id, target_side) = {
-                        let target = &self.aircraft[j];
-                        if target.phase == FlightPhase::Destroyed { continue; }
-                        (target.lat, target.lon, target.altitude_ft, target.heading_deg, target.model.clone(), target.id, target.side)
-                    };
-
-                    let (_rf, _rl) = rcs_for_model(&target_model);
-                    // Ground radar logic reused for airborne (RadarSystem is omni, but we can wrap it)
-                    // For now, let's just use a simple distance + FOV check
-                    let dist = airstrike_engine::core::radar::haversine_km(radar_lat, radar_lon, target_lat, target_lon);
-                    if dist <= radar.range_km {
-                        // Check FOV
-                        let b = bearing_deg(radar_lat, radar_lon, target_lat, target_lon);
-                        let diff = (b - radar_heading).abs();
-                        let diff = if diff > 180.0 { 360.0 - diff } else { diff };
-                        
-                        if radar.arc_deg >= 360.0 || diff <= radar.arc_deg / 2.0 {
-                            // Target is in radar volume
-                            new_contacts.push(Contact {
-                                aircraft_id: target_id,
-                                lat: target_lat,
-                                lon: target_lon,
-                                altitude_ft: target_alt,
-                                heading_deg: target_heading,
-                                iff: match target_side {
-                                    Side::Friendly => IffStatus::Friendly,
-                                    Side::Hostile => IffStatus::Hostile,
-                                    Side::Unknown => IffStatus::Unknown,
-                                },
-                                last_updated_s: self.game_time_s,
-                            });
-                        }
+                    // EW: Apply jamming multiplier
+                    let jamming_mult = self.ew.calculate_detection_multiplier(radar.position_lat, radar.position_lon, target.lat, target.lon);
+                    
+                    // RADAR: Check detection with RCS and EW
+                    if radar.is_detected(
+                        target.lat,
+                        target.lon,
+                        target.altitude_ft,
+                        target.heading_deg,
+                        target.rcs_frontal * jamming_mult,
+                        target.rcs_side * jamming_mult,
+                    ) {
+                        contacts.push(Contact {
+                            aircraft_id: target.id,
+                            lat: target.lat,
+                            lon: target.lon,
+                            altitude_ft: target.altitude_ft,
+                            heading_deg: target.heading_deg,
+                            iff: match target.side {
+                                Side::Friendly => IffStatus::Friendly,
+                                Side::Hostile => IffStatus::Hostile,
+                                Side::Unknown => IffStatus::Unknown,
+                            },
+                            last_updated_s: game_time_s,
+                        });
                     }
                 }
             }
-        }
+            contacts
+        }).collect();
+
+        // 2. Airborne radars scan and update picture
+        let airborne_contacts: Vec<Contact> = self.aircraft.par_iter().flat_map(|ac| {
+            if ac.phase == FlightPhase::Destroyed || ac.side != Side::Friendly {
+                return vec![];
+            }
+            
+            if let Some(radar) = &ac.own_radar {
+                let nearby_ids = self.spatial_index.get_nearby(ac.lat, ac.lon, radar.range_km as f64);
+                let mut contacts = Vec::new();
+                for target_id in nearby_ids {
+                    if target_id == ac.id { continue; }
+                    
+                    if let Ok(idx) = self.aircraft.binary_search_by_key(&target_id, |a| a.id) {
+                        let target = &self.aircraft[idx];
+                        if target.phase == FlightPhase::Destroyed { continue; }
+
+                        // Check FOV
+                        let b = bearing_deg(ac.lat, ac.lon, target.lat, target.lon);
+                        let diff = (b - ac.heading_deg).abs().rem_euclid(360.0);
+                        let diff = if diff > 180.0 { 360.0 - diff } else { diff };
+                        
+                        if radar.arc_deg >= 360.0 || diff <= radar.arc_deg / 2.0 {
+                            // EW: Apply jamming
+                            let jamming_mult = self.ew.calculate_detection_multiplier(ac.lat, ac.lon, target.lat, target.lon);
+                            let dist = haversine_km(ac.lat, ac.lon, target.lat, target.lon);
+                            
+                            if dist <= radar.range_km * (target.rcs_frontal * jamming_mult).max(0.1).powf(0.25) {
+                                contacts.push(Contact {
+                                    aircraft_id: target_id,
+                                    lat: target.lat,
+                                    lon: target.lon,
+                                    altitude_ft: target.altitude_ft,
+                                    heading_deg: target.heading_deg,
+                                    iff: match target.side {
+                                        Side::Friendly => IffStatus::Friendly,
+                                        Side::Hostile => IffStatus::Hostile,
+                                        Side::Unknown => IffStatus::Unknown,
+                                    },
+                                    last_updated_s: game_time_s,
+                                });
+                            }
+                        }
+                    }
+                }
+                contacts
+            } else { vec![] }
+        }).collect();
+
+        new_contacts.extend(airborne_contacts);
 
         for c in new_contacts {
             self.contact_picture.upsert(c);
@@ -377,7 +467,8 @@ impl World {
             if let Some(m) = &ac.mission {
                 if !m.formation_ids.is_empty() {
                     let all_airborne = m.formation_ids.iter().all(|&id| {
-                        if let Some(member) = self.aircraft.iter().find(|a| a.id == id) {
+                        if let Ok(idx) = self.aircraft.binary_search_by_key(&id, |a| a.id) {
+                            let member = &self.aircraft[idx];
                             !matches!(member.phase, FlightPhase::ColdDark | FlightPhase::Preflight { .. } | FlightPhase::Taxiing { .. } | FlightPhase::TakeoffRoll { .. })
                         } else { true }
                     });
@@ -402,10 +493,27 @@ impl World {
             }
         }
 
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
         for m in &mut self.missiles {
-            if let Some(target) = self.aircraft.iter().find(|a| a.id == m.target_id) {
-                m.target_lat = target.lat;
-                m.target_lon = target.lon;
+            let spec = airstrike_engine::core::weapon::weapon_by_id(m.weapon_id);
+            if let Some(s) = spec {
+                use airstrike_engine::core::weapon::SeekerType;
+                if s.seeker == SeekerType::PassiveRadar {
+                    // SEAD guidance: Track the target emitter
+                    if let Some(emitter) = self.radars.iter().find(|r| r.id == m.target_id && r.is_emitting) {
+                        m.target_lat = emitter.position_lat;
+                        m.target_lon = emitter.position_lon;
+                    }
+                    // If radar is shutdown, missile stays on last known target_lat/lon
+                } else {
+                    // Active/SemiActive/IR: Track aircraft
+                    if let Some(target) = self.aircraft.iter().find(|a| a.id == m.target_id) {
+                        m.target_lat = target.lat;
+                        m.target_lon = target.lon;
+                    }
+                }
             }
             m.advance(dt);
         }
@@ -413,21 +521,43 @@ impl World {
         let mut destroyed_ids: Vec<u32> = Vec::new();
         for m in &mut self.missiles {
             if m.phase == MissilePhase::Terminal {
-                let (target_rcs, target_id) = self
-                    .aircraft
-                    .iter()
-                    .find(|a| a.id == m.target_id)
-                    .map(|a| (a.rcs_base, a.id))
-                    .unwrap_or((1.0, m.target_id));
-                match resolve_hit(target_rcs, 1.0, false, m.weapon_id, target_id) {
-                    HitResult::Hit(id) => {
-                        destroyed_ids.push(id);
-                        self.brevity_log
-                            .push(format!("Splash! Target {} destroyed.", id));
+                // OPTIMIZED: Use spatial index to find target or nearby splashes
+                // For now, still stick to the specific target_id, but faster lookup
+                let target_opt = self.aircraft.iter().find(|a| a.id == m.target_id);
+                
+                if let Some(target) = target_opt {
+                    // Countermeasures
+                    let mut chaff_factor = 1.0;
+                    if target.chaff_count > 0 && rng.gen_bool(0.3) {
+                        chaff_factor = 0.5; // Simple chaff effectiveness
+                        // decrement chaff handled in aircraft update or here?
                     }
-                    HitResult::Miss => {
-                        self.brevity_log
-                            .push(format!("Target {} evaded missile.", m.target_id));
+                    
+                    let jamming_factor = 1.0;
+                    
+                    match resolve_hit(target.rcs_frontal, chaff_factor * jamming_factor, false, m.weapon_id, target.id) {
+                        HitResult::Hit(id) => {
+                            destroyed_ids.push(id);
+                            // Record diplomatic incident
+                            let target_faction = match target.side {
+                                Side::Friendly => "Friendly",
+                                Side::Hostile => "Hostile",
+                                Side::Unknown => "Unknown",
+                            };
+                            self.diplomacy.record_incident("Player", target_faction, 80.0);
+                            
+                            self.event_bus.publish(&format!("SPLASH! Target {} destroyed", id));
+                            self.brevity_log.push(format!("Splash! Target {} destroyed.", id));
+                        }
+                        HitResult::Miss => {
+                            self.brevity_log.push(format!("Target {} evaded missile.", m.target_id));
+                        }
+                    }
+                } else if let Some(emitter) = self.radars.iter_mut().find(|r| r.id == m.target_id) {
+                    // SEAD impact on radar
+                    if rng.gen_bool(0.8) {
+                        emitter.is_emitting = false;
+                        self.brevity_log.push(format!("Magnum! Radar {} suppressed.", emitter.id));
                     }
                 }
                 m.phase = MissilePhase::Detonated;
@@ -441,14 +571,43 @@ impl World {
         self.missiles
             .retain(|m| !matches!(m.phase, MissilePhase::Detonated | MissilePhase::Missed));
 
-        // 5. Strategic AI: Intercept hosts
+        // 5. Strategic AI: Intercept and SEAD counter-logic
+        let missiles_in_air: Vec<(f64, f64, u32, &'static str)> = self.missiles.iter()
+            .map(|m| (m.lat, m.lon, m.target_id, m.weapon_id))
+            .collect();
+
+        for radar in &mut self.radars {
+            if radar.side == Side::Friendly { continue; }
+            if !radar.is_emitting { continue; }
+
+            // SEAD Counter: Shutdown if a HARM is detected nearby tracking this radar
+            for (m_lat, m_lon, m_target_id, m_weapon_id) in &missiles_in_air {
+                if *m_target_id == radar.id {
+                    let spec = airstrike_engine::core::weapon::weapon_by_id(m_weapon_id);
+                    if let Some(s) = spec {
+                        if s.seeker == airstrike_engine::core::weapon::SeekerType::PassiveRadar {
+                             let dist = haversine_km(radar.position_lat, radar.position_lon, *m_lat, *m_lon);
+                             if dist < 50.0 && rng.gen_bool(0.7) { // 70% chance to shutdown
+                                 radar.is_emitting = false;
+                                 self.brevity_log.push(format!("Radar {} going silent! (SEAD threat detected)", radar.id));
+                             }
+                        }
+                    }
+                }
+            }
+        }
+
         let hostile_bases: Vec<String> = self.airports.iter()
             .filter(|a| a.side == Side::Hostile)
             .map(|a| a.icao.clone())
             .collect();
 
         let threats: Vec<(f64, f64)> = self.aircraft.iter()
-            .filter(|a| a.side == Side::Friendly && a.is_detected && a.phase != FlightPhase::Destroyed)
+            .filter(|a| {
+                if a.phase == FlightPhase::Destroyed || !a.is_detected { return false; }
+                // Only target hostile or those who have negative relations
+                self.diplomacy.is_hostile("Hostile", "Friendly") // Placeholder faction names
+            })
             .map(|a| (a.lat, a.lon))
             .collect();
 

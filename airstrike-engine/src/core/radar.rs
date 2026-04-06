@@ -12,15 +12,17 @@ pub enum RadarTier {
 
 /// A ground-based or airborne radar system
 pub struct RadarSystem {
+    pub id: u32,
     pub range_km: f32,
     pub position_lat: f64,
     pub position_lon: f64,
     pub altitude_m: f32,
-    pub tier: RadarTier, // NEW
-    pub side: Side,      // NEW
+    pub tier: RadarTier,
+    pub side: Side,
     pub scan_angle_deg: f32,
     pub sweep_angle: f32,
     pub sweep_dir: f32,
+    pub is_emitting: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -45,8 +47,9 @@ impl AircraftRadar {
 }
 
 impl RadarSystem {
-    pub fn new(lat: f64, lon: f64, altitude_m: f32, range_km: f32, side: Side) -> Self {
+    pub fn new(id: u32, lat: f64, lon: f64, altitude_m: f32, range_km: f32, side: Side) -> Self {
         RadarSystem {
+            id,
             position_lat: lat,
             position_lon: lon,
             altitude_m,
@@ -56,6 +59,7 @@ impl RadarSystem {
             scan_angle_deg: 360.0,
             sweep_angle: 0.0,
             sweep_dir: 1.0,
+            is_emitting: true,
         }
     }
 
